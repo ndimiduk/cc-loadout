@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""Unicode sparkline of Claude CLI usage for tmux status-right.
+
+Parses ~/.claude/projects/*.jsonl session files and caches the results.
+
+Modes:
+    claude-usage-spark          # token count (default)
+    claude-usage-spark --cost   # estimated USD via LiteLLM pricing
+
+Output example:
+    ▁▂▃▅▇▃▂ 4.8M tok
+    ▁▂▃▅▇▃▂ $1.4k
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import ssl
+import sys
+import time
+import urllib.request
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+SPARK_CHARS = "▁▂▃▄▅▆▇█"
+CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
+CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "claude-usage-spark"
+SESSIONS_CACHE = CACHE_DIR / "sessions.json"
+PRICING_CACHE = CACHE_DIR / "litellm-pricing.json"
+PRICING_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+PRICING_MAX_AGE = 86400
+SESSIONS_MAX_AGE = 300  # re-scan JSONL files at most every 5 minutes
+WEEKS = 12
+TRAILING_DAYS = 30
+
+
+# -- Pricing ------------------------------------------------------------------
+
+def _load_pricing() -> dict:
+    if PRICING_CACHE.exists():
+        age = time.time() - PRICING_CACHE.stat().st_mtime
+        if age < PRICING_MAX_AGE:
+            try:
+                return json.loads(PRICING_CACHE.read_text())
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    try:
+        ctx = ssl.create_default_context()
+        req = urllib.request.Request(PRICING_URL, headers={"User-Agent": "claude-usage-spark/1.0"})
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
+            data = json.loads(resp.read())
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        PRICING_CACHE.write_text(json.dumps(data))
+        return data
+    except Exception:
+        pass
+
+    if PRICING_CACHE.exists():
+        try:
+            return json.loads(PRICING_CACHE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return {}
+
+
+def compute_cost(pricing: dict, model: str, input_tokens: int, output_tokens: int,
+                 cache_read_tokens: int = 0, cache_creation_tokens: int = 0) -> float:
+    entry = pricing.get(model)
+    if not entry:
+        return 0.0
+    cost = 0.0
+    cost += input_tokens * entry.get("input_cost_per_token", 0)
+    cost += output_tokens * entry.get("output_cost_per_token", 0)
+    cost += cache_read_tokens * entry.get("cache_read_input_token_cost", 0)
+    cost += cache_creation_tokens * entry.get("cache_creation_input_token_cost", 0)
+    return cost
+
+
+# -- Session parsing -----------------------------------------------------------
+
+def _parse_jsonl(jsonl_file: Path) -> dict | None:
+    seen: dict[str, dict] = {}
+    first_ts = None
+    model = ""
+    try:
+        with open(jsonl_file) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("type") != "assistant":
+                    continue
+                msg = obj.get("message", {})
+                usage = msg.get("usage", {})
+                if not usage:
+                    continue
+                if not model:
+                    model = msg.get("model", "")
+                ts = obj.get("timestamp")
+                if ts and first_ts is None:
+                    first_ts = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+                msg_id = msg.get("id", f"_no_id_{len(seen)}")
+                seen[msg_id] = {
+                    "input_tokens": usage.get("input_tokens", 0),
+                    "output_tokens": usage.get("output_tokens", 0),
+                    "cache_read_tokens": usage.get("cache_read_input_tokens", 0),
+                    "cache_creation_tokens": usage.get("cache_creation_input_tokens", 0),
+                }
+    except OSError:
+        return None
+
+    if not seen:
+        return None
+
+    totals = {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_creation_tokens": 0}
+    for entry in seen.values():
+        for k in totals:
+            totals[k] += entry[k]
+
+    if totals["input_tokens"] == 0 and totals["output_tokens"] == 0:
+        return None
+
+    if first_ts is None:
+        first_ts = jsonl_file.stat().st_mtime
+
+    return {
+        "session_id": jsonl_file.stem,
+        "timestamp": first_ts,
+        "model": model,
+        "mtime": jsonl_file.stat().st_mtime,
+        **totals,
+    }
+
+
+# -- Cache management ----------------------------------------------------------
+
+def _load_sessions_cache() -> dict[str, dict]:
+    """Returns {session_id: entry} from the cache file."""
+    if not SESSIONS_CACHE.exists():
+        return {}
+    try:
+        entries = json.loads(SESSIONS_CACHE.read_text())
+        return {e["session_id"]: e for e in entries}
+    except (json.JSONDecodeError, OSError, KeyError):
+        return {}
+
+
+def _save_sessions_cache(by_id: dict[str, dict]):
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    SESSIONS_CACHE.write_text(json.dumps(list(by_id.values()), indent=2))
+
+
+def load_sessions() -> list[dict]:
+    """Load session data, using cache and only re-parsing changed files."""
+    if not CLAUDE_PROJECTS.exists():
+        return list(_load_sessions_cache().values())
+
+    # If cache is fresh enough, skip the filesystem scan entirely
+    if SESSIONS_CACHE.exists():
+        age = time.time() - SESSIONS_CACHE.stat().st_mtime
+        if age < SESSIONS_MAX_AGE:
+            return list(_load_sessions_cache().values())
+
+    cached = _load_sessions_cache()
+    cutoff = time.time() - TRAILING_DAYS * 86400
+    updated = False
+
+    # Scan for new or modified JSONL files
+    for project_dir in CLAUDE_PROJECTS.iterdir():
+        if not project_dir.is_dir():
+            continue
+        for jsonl_file in project_dir.glob("*.jsonl"):
+            if jsonl_file.stat().st_mtime < cutoff:
+                continue
+            sid = jsonl_file.stem
+            mtime = jsonl_file.stat().st_mtime
+            existing = cached.get(sid)
+            if existing and existing.get("mtime", 0) >= mtime:
+                continue
+            parsed = _parse_jsonl(jsonl_file)
+            if parsed:
+                cached[sid] = parsed
+                updated = True
+
+    if updated:
+        _save_sessions_cache(cached)
+    else:
+        # Touch the cache file so we don't re-scan for another SESSIONS_MAX_AGE
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        SESSIONS_CACHE.touch()
+
+    return list(cached.values())
+
+
+# -- Rendering -----------------------------------------------------------------
+
+def weekly_buckets(entries: list[dict], key: str, weeks: int = WEEKS) -> list[float]:
+    now = datetime.now(timezone.utc)
+    monday = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    monday -= timedelta(days=monday.weekday())
+
+    buckets = []
+    for i in range(weeks):
+        ws = monday - timedelta(weeks=weeks - 1 - i)
+        we = ws + timedelta(weeks=1)
+        buckets.append({"start": ws.timestamp(), "end": we.timestamp(), "value": 0.0})
+
+    for e in entries:
+        ts = e.get("timestamp", 0)
+        if key == "tokens":
+            val = e.get("input_tokens", 0) + e.get("output_tokens", 0)
+        else:
+            val = e.get("cost_usd", 0)
+        for b in buckets:
+            if b["start"] <= ts < b["end"]:
+                b["value"] += val
+                break
+
+    return [b["value"] for b in buckets]
+
+
+def sparkline(values: list[float]) -> str:
+    if not values or max(values) == 0:
+        return ""
+    mx = max(values)
+    return "".join(SPARK_CHARS[min(int(v / mx * (len(SPARK_CHARS) - 1)), len(SPARK_CHARS) - 1)] for v in values)
+
+
+def format_usd(v: float) -> str:
+    if v == 0:
+        return "$0"
+    rounded = float(f"{v:.2g}")
+    if rounded >= 1000:
+        return f"${rounded / 1000:.2g}k"
+    if rounded == int(rounded):
+        return f"${int(rounded)}"
+    return f"${rounded}"
+
+
+def format_tokens(n: int) -> str:
+    rounded = float(f"{n:.2g}")
+    if rounded >= 1_000_000_000:
+        return f"{rounded / 1_000_000_000:.2g}B"
+    if rounded >= 1_000_000:
+        return f"{rounded / 1_000_000:.2g}M"
+    if rounded >= 1_000:
+        return f"{rounded / 1_000:.2g}k"
+    return str(int(rounded))
+
+
+def main():
+    mode = "cost" if "--cost" in sys.argv else "tokens"
+
+    entries = load_sessions()
+
+    cutoff = time.time() - TRAILING_DAYS * 86400
+    recent = [e for e in entries if e.get("timestamp", 0) > cutoff]
+
+    if not recent:
+        return
+
+    if mode == "cost":
+        pricing = _load_pricing()
+        for e in recent:
+            e["cost_usd"] = compute_cost(
+                pricing, e.get("model", ""),
+                e.get("input_tokens", 0), e.get("output_tokens", 0),
+                e.get("cache_read_tokens", 0), e.get("cache_creation_tokens", 0),
+            )
+
+        total_cost = sum(e["cost_usd"] for e in recent)
+        values = weekly_buckets(recent, "cost")
+        spark = sparkline(values)
+        label = format_usd(total_cost)
+    else:
+        total_tokens = sum(e.get("input_tokens", 0) + e.get("output_tokens", 0) for e in recent)
+        values = weekly_buckets(recent, "tokens")
+        spark = sparkline(values)
+        label = f"{format_tokens(total_tokens)} tok"
+
+    print(f"{spark} {label}")
+
+
+if __name__ == "__main__":
+    main()

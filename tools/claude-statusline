@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""Claude Code status line: model, context progress bar, and session cost.
+
+Reads the JSON payload from stdin that Claude Code pipes to statusLine commands.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import time
+from datetime import datetime, timezone
+
+BAR_WIDTH = 20
+FILLED = "█"
+EMPTY = "░"
+
+
+def progress_bar(pct: float, width: int = BAR_WIDTH) -> str:
+    filled = round(pct / 100 * width)
+    if pct > 0:
+        filled = max(1, filled)
+    filled = min(filled, width)
+    return FILLED * filled + EMPTY * (width - filled)
+
+
+def format_tokens(n: int) -> str:
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.0f}k"
+    return str(n)
+
+
+def format_cost(usd: float) -> str:
+    if usd >= 100:
+        return f"${usd:.0f}"
+    if usd >= 10:
+        return f"${usd:.1f}"
+    return f"${usd:.2f}"
+
+
+def main():
+    try:
+        data = json.load(sys.stdin)
+    except (json.JSONDecodeError, OSError):
+        return
+
+    if "--dump" in sys.argv:
+        json.dump(data, sys.stdout, indent=2)
+        return
+
+    model = data.get("model", {}).get("display_name", "?")
+
+    ctx = data.get("context_window", {})
+    usage = ctx.get("current_usage", {})
+    used = (
+        usage.get("input_tokens", 0)
+        + usage.get("cache_creation_input_tokens", 0)
+        + usage.get("cache_read_input_tokens", 0)
+    )
+    pct = ctx.get("used_percentage", 0)
+    cost = data.get("cost", {}).get("total_cost_usd", 0)
+
+    bar = progress_bar(pct)
+    tokens = format_tokens(used)
+
+    pct_str = f"{pct:.0f}" if isinstance(pct, float) else str(pct)
+    parts = [f"{model}  │  {bar} {pct_str}% ({tokens})  {format_cost(cost)}"]
+
+    rl = data.get("rate_limits", {})
+    rl_parts = []
+    for key, label in [("five_hour", "5h"), ("seven_day", "7d")]:
+        bucket = rl.get(key)
+        if not bucket:
+            continue
+        pct_used = bucket.get("used_percentage", 0)
+        pct_str = f"{pct_used:.0f}" if isinstance(pct_used, float) else str(pct_used)
+        resets_at = bucket.get("resets_at")
+        if resets_at:
+            remaining = max(0, resets_at - time.time())
+            hours = remaining / 3600
+            if hours >= 1:
+                reset_str = f"{hours:.1f}h"
+            else:
+                reset_str = f"{remaining / 60:.0f}m"
+            rl_parts.append(f"{label}: {pct_str}% (resets {reset_str})")
+        else:
+            rl_parts.append(f"{label}: {pct_str}%")
+
+    if rl_parts:
+        parts.append("  ".join(rl_parts))
+
+    print("  │  ".join(parts))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""rklint — health checks for markdown knowledge bases.
+
+Assumes conventions: YAML frontmatter (title, updated, tags), a README.md
+document map, and a docs/ directory. No config file — conventions are the config.
+"""
+
+import argparse
+import re
+import sys
+from collections import Counter
+from pathlib import Path
+
+
+def find_root():
+    """Walk up to find the git root."""
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return Path(out.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
+def parse_frontmatter(path):
+    """Extract YAML frontmatter as a dict. Returns {} if none found."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {}
+
+    if not text.startswith("---"):
+        return {}
+
+    end = text.find("\n---", 3)
+    if end < 0:
+        return {}
+
+    block = text[4:end]
+    fm = {}
+
+    # title / date field — simple key: value
+    for key in ("title", "updated", "date"):
+        m = re.search(rf"^{key}:\s*(.+)$", block, re.MULTILINE)
+        if m:
+            fm[key] = m.group(1).strip().strip('"').strip("'")
+
+    # tags — inline [a, b] or multi-line list
+    m = re.search(r"^tags:\s*\[(.+)\]$", block, re.MULTILINE)
+    if m:
+        fm["tags"] = [t.strip().strip('"').strip("'") for t in m.group(1).split(",")]
+    else:
+        m = re.search(r"^tags:\s*$", block, re.MULTILINE)
+        if m:
+            tags = []
+            for line in block[m.end():].split("\n"):
+                lm = re.match(r"^\s*-\s+(.+)$", line)
+                if lm:
+                    tags.append(lm.group(1).strip().strip('"').strip("'"))
+                else:
+                    break
+            if tags:
+                fm["tags"] = tags
+
+    return fm
+
+
+def git_tracked_files(root):
+    """Return set of paths tracked by git, relative to root."""
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            ["git", "ls-files"],
+            cwd=root,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return {root / line for line in out.strip().split("\n") if line}
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
+def collect_docs(docs_dir, root=None):
+    """Return sorted list of .md files under docs_dir. Excludes untracked files when inside a git repo."""
+    all_docs = sorted(docs_dir.rglob("*.md"))
+    if root is None:
+        return all_docs
+    tracked = git_tracked_files(root)
+    if tracked is None:
+        return all_docs
+    return [p for p in all_docs if p in tracked]
+
+
+def cmd_tags(root, docs_prefix):
+    docs_dir = root / docs_prefix
+    if not docs_dir.is_dir():
+        print(f"rklint: docs directory not found: {docs_dir}", file=sys.stderr)
+        return 2
+
+    counter = Counter()
+    for path in collect_docs(docs_dir, root):
+        fm = parse_frontmatter(path)
+        for tag in fm.get("tags", []):
+            counter[tag] += 1
+
+    for tag, count in counter.most_common():
+        print(f"  {count:3d} {tag}")
+    return 0
+
+
+ARCHIVE_RE = re.compile(r"^>\s*\*\*Archived\b", re.MULTILINE)
+
+
+def is_archived(path):
+    """True if the doc has an archive banner (> **Archived ...)."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return bool(ARCHIVE_RE.search(text))
+
+
+def cmd_orphans(root, docs_prefix):
+    docs_dir = root / docs_prefix
+    readme = root / "README.md"
+
+    if not docs_dir.is_dir():
+        print(f"rklint: docs directory not found: {docs_dir}", file=sys.stderr)
+        return 2
+    if not readme.is_file():
+        print(f"rklint: README.md not found at: {readme}", file=sys.stderr)
+        return 2
+
+    readme_text = readme.read_text(encoding="utf-8")
+    found = 0
+    archived = 0
+    for path in collect_docs(docs_dir, root):
+        rel = str(path.relative_to(root))
+        if rel not in readme_text:
+            if is_archived(path):
+                archived += 1
+            else:
+                print(f"  {rel}")
+                found += 1
+
+    if found == 0:
+        print("  (none)")
+    if archived > 0:
+        print(f"  ({archived} archived doc(s) also absent from README — expected)")
+    return 0
+
+
+def cmd_frontmatter(root, docs_prefix, date_field="updated"):
+    docs_dir = root / docs_prefix
+    if not docs_dir.is_dir():
+        print(f"rklint: docs directory not found: {docs_dir}", file=sys.stderr)
+        return 2
+
+    required = ("title", date_field, "tags")
+    found = 0
+    for path in collect_docs(docs_dir, root):
+        rel = str(path.relative_to(root))
+        fm = parse_frontmatter(path)
+
+        if not fm:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if not text.startswith("---"):
+                print(f"  {rel}  — no frontmatter")
+                found += 1
+                continue
+
+        missing = [k for k in required if k not in fm]
+        if missing:
+            print(f"  {rel}  — missing: {', '.join(missing)}")
+            found += 1
+
+    if found == 0:
+        print("  (none)")
+    return 0
+
+
+def cmd_all(root, docs_prefix, date_field="updated"):
+    print("=== Tags ===")
+    cmd_tags(root, docs_prefix)
+    print()
+    print("=== Orphan Docs (not in README) ===")
+    cmd_orphans(root, docs_prefix)
+    print()
+    print("=== Frontmatter Issues ===")
+    cmd_frontmatter(root, docs_prefix, date_field)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="rklint",
+        description="Health checks for markdown knowledge bases.",
+    )
+    parser.add_argument("--root", type=Path, default=None, help="Repository root (default: git toplevel)")
+    parser.add_argument("--docs", default="docs", help="Docs directory relative to root (default: docs)")
+    parser.add_argument("--date-field", default="updated", help="Frontmatter date field name (default: updated)")
+    parser.add_argument("command", choices=["tags", "orphans", "frontmatter", "all", "help"])
+    args = parser.parse_args()
+
+    if args.command == "help":
+        parser.print_help()
+        return 0
+
+    root = args.root
+    if root is None:
+        root = find_root()
+        if root is None:
+            print("rklint: not in a git repo and --root not set", file=sys.stderr)
+            return 2
+
+    cmd = args.command
+    if cmd == "tags":
+        return cmd_tags(root, args.docs) or 0
+    elif cmd == "orphans":
+        return cmd_orphans(root, args.docs) or 0
+    elif cmd == "frontmatter":
+        return cmd_frontmatter(root, args.docs, args.date_field) or 0
+    elif cmd == "all":
+        return cmd_all(root, args.docs, args.date_field) or 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

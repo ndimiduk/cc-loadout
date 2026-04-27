@@ -1,0 +1,555 @@
+#!/usr/bin/env python3
+"""session-tx - query Claude Code session JSONL transcripts.
+
+Bundled with the ndimiduk:session-transcripts skill. Stdlib only.
+
+Session JSONL layout:
+  Each line is one JSON object.
+  Top-level `type`: user, assistant, attachment, system, permission-mode,
+    last-prompt, queue-operation, file-history-snapshot, summary.
+  For user/assistant: `message.role`, `message.content` (str | list | null).
+  Content blocks: text, thinking, tool_use (name/input/id), tool_result
+    (tool_use_id/content; content is str or list of blocks).
+  Subagent transcripts live at <project>/<uuid>/subagents/agent-*.jsonl.
+"""
+import argparse
+import json
+import os
+import re
+import sys
+import time
+from collections import Counter
+from pathlib import Path
+from typing import Iterator, Optional
+
+PROJECTS_ROOT = Path.home() / ".claude" / "projects"
+
+
+def encode_project_dir(path: str) -> str:
+    p = os.path.abspath(os.path.expanduser(path))
+    return p.replace("/", "-").replace(".", "-")
+
+
+def resolve_session_path(arg: str) -> Path:
+    if not arg:
+        raise SystemExit("missing session path")
+    p = Path(arg).expanduser()
+    if p.is_file():
+        return p
+    matches = []
+    for f in PROJECTS_ROOT.rglob("*.jsonl"):
+        if f.name.startswith(arg) or arg in f.name:
+            matches.append(f)
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise SystemExit(f"no session matching {arg!r}")
+    print(f"multiple matches for {arg!r}:", file=sys.stderr)
+    for m in matches[:20]:
+        print(f"  {m}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def iter_entries(path: Path) -> Iterator[tuple[int, dict]]:
+    with path.open() as f:
+        for i, line in enumerate(f, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                yield i, json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+
+def role_of(obj: dict) -> Optional[str]:
+    msg = obj.get("message") or {}
+    return msg.get("role")
+
+
+def flatten_text(content) -> list[str]:
+    """Extract text-like strings from message.content."""
+    if content is None:
+        return []
+    if isinstance(content, str):
+        return [content]
+    if isinstance(content, list):
+        out = []
+        for b in content:
+            if isinstance(b, dict) and b.get("type") == "text":
+                t = b.get("text") or ""
+                if t:
+                    out.append(t)
+        return out
+    return []
+
+
+def flatten_tool_result(content) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for b in content:
+            if not isinstance(b, dict):
+                parts.append(str(b))
+                continue
+            t = b.get("type")
+            if t == "text":
+                parts.append(b.get("text") or "")
+            elif t == "tool_reference":
+                parts.append(f"[ref:{b.get('tool_name','?')}]")
+            elif t == "image":
+                parts.append("[image]")
+            else:
+                parts.append(json.dumps(b, separators=(",", ":")))
+        return "\n".join(parts)
+    return str(content)
+
+
+def truncate(s: str, n: int) -> str:
+    s = s.replace("\n", " \u23ce ")
+    if len(s) <= n:
+        return s
+    return s[: n - 1] + "\u2026"
+
+
+def _first_user_prompt(path: Path) -> Optional[str]:
+    """First non-sidechain user-authored text prompt (skips hook-wrapped content)."""
+    for _, obj in iter_entries(path):
+        if obj.get("type") != "user" or obj.get("isSidechain"):
+            continue
+        for t in flatten_text((obj.get("message") or {}).get("content")):
+            stripped = t.strip()
+            if not stripped:
+                continue
+            # skip system reminders / hook wrappers / command caveats
+            if stripped.startswith("<") and ">" in stripped[:400]:
+                # find first line that isn't a tag
+                for line in stripped.splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("<"):
+                        return line
+                continue
+            return stripped
+    return None
+
+
+def _build_results_index(path: Path) -> dict:
+    idx = {}
+    for i, obj in iter_entries(path):
+        c = (obj.get("message") or {}).get("content")
+        if not isinstance(c, list):
+            continue
+        for b in c:
+            if isinstance(b, dict) and b.get("type") == "tool_result":
+                idx[b.get("tool_use_id")] = (i, flatten_tool_result(b.get("content")))
+    return idx
+
+
+def _iter_tool_uses(path: Path):
+    for i, obj in iter_entries(path):
+        c = (obj.get("message") or {}).get("content")
+        if not isinstance(c, list):
+            continue
+        for b in c:
+            if isinstance(b, dict) and b.get("type") == "tool_use":
+                yield i, b, obj
+
+
+def _in_range(i: int, args) -> bool:
+    if getattr(args, "start", 0) and i < args.start:
+        return False
+    if getattr(args, "end", 0) and i > args.end:
+        return False
+    return True
+
+
+# -------- commands --------
+
+def cmd_list(args):
+    if args.dir:
+        project_dir = PROJECTS_ROOT / encode_project_dir(args.dir)
+    elif args.project:
+        project_dir = PROJECTS_ROOT / args.project
+    else:
+        project_dir = PROJECTS_ROOT / encode_project_dir(os.getcwd())
+    if not project_dir.is_dir():
+        print(f"no project dir: {project_dir}", file=sys.stderr)
+        return 1
+    files = sorted(project_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if args.limit:
+        files = files[: args.limit]
+    for f in files:
+        st = f.stat()
+        title = _first_user_prompt(f) or ""
+        mtime = time.strftime("%Y-%m-%d %H:%M", time.localtime(st.st_mtime))
+        print(f"{f.name}\t{st.st_size:>10}\t{mtime}\t{truncate(title, 90)}")
+
+
+def cmd_title(args):
+    path = resolve_session_path(args.path)
+    print(_first_user_prompt(path) or "(no user prompt found)")
+
+
+def cmd_summary(args):
+    path = resolve_session_path(args.path)
+    top_types = Counter()
+    roles = Counter()
+    block_types = Counter()
+    tool_use_names = Counter()
+    first_ts = None
+    last_ts = None
+    sidechain = 0
+    total = 0
+    for _, obj in iter_entries(path):
+        total += 1
+        top_types[obj.get("type")] += 1
+        if obj.get("isSidechain"):
+            sidechain += 1
+        ts = obj.get("timestamp")
+        if ts:
+            first_ts = first_ts or ts
+            last_ts = ts
+        msg = obj.get("message") or {}
+        r = msg.get("role")
+        if r:
+            roles[r] += 1
+        c = msg.get("content")
+        if isinstance(c, list):
+            for b in c:
+                if not isinstance(b, dict):
+                    continue
+                bt = b.get("type")
+                block_types[bt] += 1
+                if bt == "tool_use":
+                    tool_use_names[b.get("name")] += 1
+    print(f"file: {path}")
+    print(f"size: {path.stat().st_size} bytes")
+    print(f"entries: {total}")
+    print(f"first_ts: {first_ts}")
+    print(f"last_ts:  {last_ts}")
+    print(f"sidechain_entries: {sidechain}")
+    print("top_types:")
+    for k, v in top_types.most_common():
+        print(f"  {v:>5}  {k}")
+    print("roles:")
+    for k, v in roles.most_common():
+        print(f"  {v:>5}  {k}")
+    print("block_types:")
+    for k, v in block_types.most_common():
+        print(f"  {v:>5}  {k}")
+    print("tools:")
+    for k, v in tool_use_names.most_common():
+        print(f"  {v:>5}  {k}")
+
+
+def cmd_messages(args):
+    path = resolve_session_path(args.path)
+    trunc = 10_000_000 if args.full else args.max_chars
+    for i, obj in iter_entries(path):
+        if not _in_range(i, args):
+            continue
+        if not args.sidechain and obj.get("isSidechain"):
+            continue
+        role = role_of(obj)
+        if args.role and role != args.role:
+            continue
+        if role is None:
+            continue
+        for t in flatten_text((obj.get("message") or {}).get("content")):
+            print(f"{i:>5}  {role}: {truncate(t, trunc)}")
+
+
+def cmd_thinking(args):
+    path = resolve_session_path(args.path)
+    trunc = 10_000_000 if args.full else args.max_chars
+    for i, obj in iter_entries(path):
+        if not _in_range(i, args):
+            continue
+        c = (obj.get("message") or {}).get("content")
+        if not isinstance(c, list):
+            continue
+        for b in c:
+            if isinstance(b, dict) and b.get("type") == "thinking":
+                txt = b.get("thinking") or ""
+                if txt:
+                    print(f"{i:>5}  {truncate(txt, trunc)}")
+
+
+def cmd_tools(args):
+    path = resolve_session_path(args.path)
+    pattern = re.compile(args.grep) if args.grep else None
+    trunc = 10_000_000 if args.full else args.max_chars
+    results = _build_results_index(path) if args.with_results else {}
+    for i, b, _ in _iter_tool_uses(path):
+        if not _in_range(i, args):
+            continue
+        name = b.get("name")
+        if args.name and name != args.name:
+            continue
+        input_str = json.dumps(b.get("input") or {}, separators=(",", ":"))
+        if pattern and not pattern.search(input_str):
+            continue
+        print(f"{i:>5}  {name}  {truncate(input_str, trunc)}")
+        if args.with_results:
+            r = results.get(b.get("id"))
+            if r:
+                print(f"       \u2192 result@{r[0]}: {truncate(r[1], trunc)}")
+
+
+def cmd_bash(args):
+    path = resolve_session_path(args.path)
+    pattern = re.compile(args.grep) if args.grep else None
+    trunc = 10_000_000 if args.full else args.max_chars
+    results = _build_results_index(path) if args.with_results else {}
+    for i, b, _ in _iter_tool_uses(path):
+        if not _in_range(i, args):
+            continue
+        if b.get("name") != "Bash":
+            continue
+        inp = b.get("input") or {}
+        cmd = inp.get("command") or ""
+        desc = inp.get("description") or ""
+        if pattern and not pattern.search(cmd + " " + desc):
+            continue
+        print(f"{i:>5}  # {desc}")
+        print(f"       $ {truncate(cmd, trunc)}")
+        if args.with_results:
+            r = results.get(b.get("id"))
+            if r:
+                print(f"       \u2192 {truncate(r[1], trunc)}")
+
+
+def cmd_agents(args):
+    path = resolve_session_path(args.path)
+    trunc = 10_000_000 if args.full else args.max_chars
+    results = _build_results_index(path) if args.with_results else {}
+    for i, b, _ in _iter_tool_uses(path):
+        if b.get("name") != "Agent":
+            continue
+        if not _in_range(i, args):
+            continue
+        inp = b.get("input") or {}
+        sub = inp.get("subagent_type") or "general-purpose"
+        desc = inp.get("description") or ""
+        prompt = inp.get("prompt") or ""
+        print(f"{i:>5}  [{sub}] {desc}")
+        print(f"       prompt: {truncate(prompt, trunc)}")
+        if args.with_results:
+            r = results.get(b.get("id"))
+            if r:
+                print(f"       \u2192 result@{r[0]}: {truncate(r[1], trunc)}")
+
+
+def cmd_range(args):
+    path = resolve_session_path(args.path)
+    for i, obj in iter_entries(path):
+        if i < args.start or i > args.end:
+            continue
+        t = obj.get("type")
+        role = role_of(obj)
+        sc = "S" if obj.get("isSidechain") else " "
+        tag = f"{t}/{role}" if role else (t or "?")
+        c = (obj.get("message") or {}).get("content")
+        summary = ""
+        if isinstance(c, str):
+            summary = truncate(c, 140)
+        elif isinstance(c, list):
+            parts = []
+            for b in c:
+                if not isinstance(b, dict):
+                    continue
+                bt = b.get("type")
+                if bt == "text":
+                    parts.append(truncate(b.get("text") or "", 80))
+                elif bt == "thinking":
+                    parts.append(f"[think {len(b.get('thinking') or '')}ch]")
+                elif bt == "tool_use":
+                    parts.append(f"[{b.get('name')}]")
+                elif bt == "tool_result":
+                    parts.append(f"[result {truncate(flatten_tool_result(b.get('content')), 60)}]")
+                else:
+                    parts.append(f"[{bt}]")
+            summary = " ".join(parts)
+        elif t == "attachment":
+            att = obj.get("attachment") or {}
+            summary = f"{att.get('type','')} {att.get('hookName','')}".strip()
+        print(f"{i:>5} {sc} {tag:<18} {truncate(summary, 180)}")
+
+
+def cmd_grep(args):
+    path = resolve_session_path(args.path)
+    pattern = re.compile(args.pattern, re.IGNORECASE if args.ignore_case else 0)
+    for i, obj in iter_entries(path):
+        role = role_of(obj) or obj.get("type") or "?"
+        c = (obj.get("message") or {}).get("content")
+        candidates = []
+        if isinstance(c, str):
+            candidates.append(("content", c))
+        elif isinstance(c, list):
+            for b in c:
+                if not isinstance(b, dict):
+                    continue
+                bt = b.get("type")
+                if bt == "text":
+                    candidates.append(("text", b.get("text") or ""))
+                elif bt == "thinking" and args.thinking:
+                    candidates.append(("thinking", b.get("thinking") or ""))
+                elif bt == "tool_use":
+                    candidates.append(("tool_use", json.dumps(b.get("input") or {})))
+                elif bt == "tool_result":
+                    candidates.append(("tool_result", flatten_tool_result(b.get("content"))))
+        for kind, txt in candidates:
+            m = pattern.search(txt)
+            if not m:
+                continue
+            s = max(0, m.start() - 40)
+            e = min(len(txt), m.end() + 80)
+            excerpt = txt[s:e].replace("\n", " \u23ce ")
+            pre = "\u2026" if s > 0 else ""
+            suf = "\u2026" if e < len(txt) else ""
+            print(f"{i:>5}  {role}/{kind}: {pre}{excerpt}{suf}")
+
+
+def cmd_find(args):
+    kw = args.keyword.lower()
+    cutoff = time.time() - args.days * 86400 if args.days else 0
+    hits = []
+    for proj in PROJECTS_ROOT.iterdir():
+        if not proj.is_dir():
+            continue
+        for f in proj.glob("*.jsonl"):
+            st = f.stat()
+            if st.st_mtime < cutoff:
+                continue
+            title = _first_user_prompt(f) or ""
+            if kw in title.lower() or kw in f.name.lower() or kw in proj.name.lower():
+                hits.append((st.st_mtime, f, title))
+    hits.sort(reverse=True)
+    if args.limit:
+        hits = hits[: args.limit]
+    for mt, f, title in hits:
+        mtime = time.strftime("%Y-%m-%d %H:%M", time.localtime(mt))
+        print(f"{mtime}\t{f}\t{truncate(title, 100)}")
+
+
+def cmd_subagents(args):
+    path = resolve_session_path(args.path)
+    uuid = path.stem
+    sub_dir = path.parent / uuid / "subagents"
+    if not sub_dir.is_dir():
+        print(f"no subagents dir: {sub_dir}", file=sys.stderr)
+        return 1
+    for f in sorted(sub_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime):
+        st = f.stat()
+        mtime = time.strftime("%Y-%m-%d %H:%M", time.localtime(st.st_mtime))
+        # find agent description / subagent_type from first lines
+        desc = ""
+        for _, obj in iter_entries(f):
+            c = (obj.get("message") or {}).get("content")
+            if isinstance(c, list):
+                for b in c:
+                    if isinstance(b, dict) and b.get("type") == "text":
+                        desc = (b.get("text") or "").strip().splitlines()[0] if b.get("text") else ""
+                        break
+            if desc:
+                break
+        print(f"{f.name}\t{st.st_size:>10}\t{mtime}\t{truncate(desc, 80)}")
+
+
+def main():
+    p = argparse.ArgumentParser(prog="session-tx", description="Query Claude Code session JSONL.")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    def add_range(sp):
+        sp.add_argument("--start", type=int, default=0, help="first line (1-based, inclusive)")
+        sp.add_argument("--end", type=int, default=0, help="last line (1-based, inclusive)")
+
+    def add_max(sp, default=200):
+        sp.add_argument("--max-chars", type=int, default=default, dest="max_chars")
+        sp.add_argument("--full", action="store_true", help="no truncation")
+
+    sp = sub.add_parser("list", help="list sessions in a project dir")
+    sp.add_argument("--dir", help="filesystem path (default: cwd)")
+    sp.add_argument("--project", help="encoded project dir name")
+    sp.add_argument("--limit", type=int, default=20)
+    sp.set_defaults(func=cmd_list)
+
+    sp = sub.add_parser("title", help="print first user prompt")
+    sp.add_argument("path")
+    sp.set_defaults(func=cmd_title)
+
+    sp = sub.add_parser("summary", help="counts of types, roles, tools, blocks")
+    sp.add_argument("path")
+    sp.set_defaults(func=cmd_summary)
+
+    sp = sub.add_parser("messages", help="dump user/assistant text messages")
+    sp.add_argument("path")
+    sp.add_argument("--role", choices=["user", "assistant"])
+    sp.add_argument("--sidechain", action="store_true", help="include sidechain entries")
+    add_range(sp)
+    add_max(sp, 200)
+    sp.set_defaults(func=cmd_messages)
+
+    sp = sub.add_parser("thinking", help="dump thinking blocks")
+    sp.add_argument("path")
+    add_range(sp)
+    add_max(sp, 300)
+    sp.set_defaults(func=cmd_thinking)
+
+    sp = sub.add_parser("tools", help="list tool uses")
+    sp.add_argument("path")
+    sp.add_argument("--name", help="filter by tool name")
+    sp.add_argument("--grep", help="regex on JSON-encoded input")
+    sp.add_argument("--with-results", action="store_true")
+    add_range(sp)
+    add_max(sp, 300)
+    sp.set_defaults(func=cmd_tools)
+
+    sp = sub.add_parser("bash", help="list Bash commands")
+    sp.add_argument("path")
+    sp.add_argument("--grep")
+    sp.add_argument("--with-results", action="store_true")
+    add_range(sp)
+    add_max(sp, 400)
+    sp.set_defaults(func=cmd_bash)
+
+    sp = sub.add_parser("agents", help="list Agent (subagent) invocations")
+    sp.add_argument("path")
+    sp.add_argument("--with-results", action="store_true")
+    add_range(sp)
+    add_max(sp, 400)
+    sp.set_defaults(func=cmd_agents)
+
+    sp = sub.add_parser("range", help="one-line summary per entry in [start,end]")
+    sp.add_argument("path")
+    sp.add_argument("start", type=int)
+    sp.add_argument("end", type=int)
+    sp.set_defaults(func=cmd_range)
+
+    sp = sub.add_parser("grep", help="regex search across messages/tool data")
+    sp.add_argument("path")
+    sp.add_argument("pattern")
+    sp.add_argument("-i", "--ignore-case", action="store_true")
+    sp.add_argument("--thinking", action="store_true", help="also search thinking blocks")
+    sp.set_defaults(func=cmd_grep)
+
+    sp = sub.add_parser("find", help="find sessions across all projects by keyword")
+    sp.add_argument("keyword")
+    sp.add_argument("--days", type=int, default=30)
+    sp.add_argument("--limit", type=int, default=20)
+    sp.set_defaults(func=cmd_find)
+
+    sp = sub.add_parser("subagents", help="list subagent transcripts for a session")
+    sp.add_argument("path")
+    sp.set_defaults(func=cmd_subagents)
+
+    args = p.parse_args()
+    rc = args.func(args) or 0
+    sys.exit(rc)
+
+
+if __name__ == "__main__":
+    main()
