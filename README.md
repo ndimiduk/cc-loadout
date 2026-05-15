@@ -64,7 +64,3 @@ README with the one-line `ln -s` to wire them in.
 - Silent on LLM ethics. The artifact has no editorializing.
 - Not advocacy. Take what fits, leave the rest.
 - Not autobiography. Patterns are the point.
-
-## License
-
-TBD (resolved before first push; choosing between MIT and CC0).
