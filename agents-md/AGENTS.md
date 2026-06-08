@@ -35,27 +35,11 @@ decision.
 
 ### Design & Planning Skills
 
-- **`ndimiduk:design-challenge`**: Use BEFORE committing to any design direction or analysis
-  conclusion. Structured adversarial review across specific dimensions (NFRs, failure modes,
-  operational complexity, scaling, maintainability, security). The biggest failure mode in past
-  sessions has been unchallenged analysis — this skill exists to prevent that.
-- **`ndimiduk:validate-idea`**: Use when evaluating whether something is worth building at all.
-  Upstream of design work.
-- **`ubiquitous-language`**: Use when a project has overloaded or ambiguous domain terms (e.g.,
-  "RBAC" meaning different things in different contexts). Produces a `UBIQUITOUS_LANGUAGE.md`
-  glossary.
-- **`write-a-prd`**: Use when scoping a new feature or build-vs-buy decision. Structured
-  interview → codebase exploration → module design → GitHub issue.
-- **`ndimiduk:writing-plans`**: OVERRIDES `superpowers:writing-plans`. Always use this version.
-  Adds risk-first task ordering, phase structure with validation gates, and "prove before
-  restructuring" discipline. The superpowers version produces good individual tasks but sequences
-  them in build-order (infrastructure first, validation last) — which is waterfall.
-- **`prd-to-plan`**: Convert a PRD into tracer-bullet vertical slices saved to `./plans/`.
-  Complements `ndimiduk:writing-plans`.
-- **`prd-to-issues`**: Break a PRD into independently-grabbable GitHub issues. Each slice
-  classified as HITL (human interaction needed) or AFK (autonomous).
-- **`improve-codebase-architecture`**: Friction-based codebase exploration → deep module
-  candidates → parallel sub-agents with different design constraints → refactor RFC.
+- **`ndimiduk:design-challenge`**: Use BEFORE committing to any design direction. Structured
+  adversarial review (NFRs, failure modes, ops complexity, scaling, security).
+- **`ndimiduk:validate-idea`**: Upstream of design — evaluate whether something is worth building.
+- **`ndimiduk:writing-plans`**: OVERRIDES `superpowers:writing-plans`. Risk-first ordering,
+  phase structure with validation gates, "prove before restructuring."
 
 **Skill override**: When `superpowers:brainstorming` says "invoke writing-plans skill," use
 `ndimiduk:writing-plans` instead of `superpowers:writing-plans`.
@@ -135,46 +119,9 @@ write a comment explaining the WHY. Don't bother explaining WHAT the code is doi
 
 ## Research and Exploration Permissions
 
-You have blanket permission for the following activities:
-
-### Git Read-Only Operations
-
-- Use ANY read-only git command without asking: `log`, `show`, `diff`, `status`, `branch`,
-  `reflog`, `blame`, `ls-files`, `ls-tree`, `cat-file`, `rev-parse`, `describe`, `remote`,
-  `config --get`, `tag`, `shortlog`, `worktree list`.
-- Explore commit history, branches, diffs, and repository state freely.
-- Use `--graph`, `--stat`, `-p`, and other visualization flags as needed.
-
-### File Inspection and Comparison Tools
-
-- Use ANY read-only inspection tools without asking: `diff`, `cmp`, `comm`, `md5sum`, `sha256sum`,
-  `wc`, `file`, `stat`, `du`, `strings`, `hexdump`, `xxd`.
-- Use text processing tools: `grep`, `awk`, `sed`, `cut`, `sort`, `uniq`, `head`, `tail`.
-- Compare files, compute checksums, analyze file contents, and extract information freely.
-
-### Scratch Directories
-
-- Create temporary directories matching patterns: `/tmp/agent-*`, `$TMPDIR/agent-*`.
-- Within scratch directories, you have full permissions: create files, run builds, compile code,
-  run tests, experiment freely.
-- Clean up scratch directories when done (or leave them for debugging if needed).
-- Use scratch space for: experiments, testing hypotheses, building isolated reproductions, trying
-  alternative implementations.
-
-### Research Workflow
-
-When investigating issues or exploring codebases:
-
-1. Use git commands freely to understand history and context.
-2. Use file inspection tools to analyze and compare files.
-3. Create a scratch directory for any experiments or compilations.
-4. Only ask for permission when you need to modify files in the actual working directory.
-
-**Exception**: Still ask before running commands that:
-
-- Modify working directory or repository state (add, commit, push, checkout, reset, rebase).
-- Access external networks (except for package managers in scratch dirs).
-- Require elevated privileges.
+Blanket permission for all read-only operations: git commands, file inspection, text processing,
+checksums, diffs. Use scratch dirs at `/tmp/agent-*` for experiments (full permissions within).
+Only ask before modifying working-tree state, accessing external networks, or elevated privileges.
 
 ## Execution Posture
 
@@ -276,41 +223,14 @@ details.
 
 ## Tagging Convention
 
-Tags are the bridge between a task tracker and a zettelkasten / notes system. The same concept
-tag on a task and on a permanent note creates a semantic link across systems; an agent acting as
-query engine surfaces the intersection.
-
-**Concept tags**: descriptive kebab-case slugs naming the *concept* — e.g. `cert-based-auth`,
-`role-reconciler`, `query-planner`, `sensitive-data`. Use the same slug wherever the concept
-appears. Drift kills the pattern — search existing tags before inventing a near-synonym.
-
-**Project tags**: kebab-case slugs naming a repo, team, or workstream — e.g. `myrepo`,
-`auth-service`, `data-platform`. Use for grouping all work touching one external artifact family.
-
-**Mechanical tags (task-tracker only)**: workflow state (`started`, `waiting`), task type
-(`feature`, `bug`, `task`, `epic`, `milestone`). Don't cross over to the vault.
-
-**Tags are categories, not identifiers.** A tag answers *what kind of thing* this is about — not
-*which specific thing*. Don't tag individual issues, PRs, or commits. Put full URLs in the task
-description or notes body, where they're clickable, carry state, and survive renames. A task on
-`some-repo PR #504` tags `some-repo`, `pr-review`, `<concept>`; the description says "Resolve
-review comments on some-repo#504"; the notes body contains the full PR URL.
-
-**Avoid**: numeric local IDs styled like tracker references (e.g. `proj-NNN`). They collide with
-real issue numbers and carry no semantic weight.
+Kebab-case slugs. Three kinds: **concept** (`cert-based-auth`, `query-planner`), **project**
+(`myrepo`, `data-platform`), **mechanical** (`started`, `bug` — task-tracker only, not vault).
+Tags are categories, not identifiers — don't tag individual PRs or commits; put full URLs in the
+description. Search existing tags before inventing near-synonyms.
 
 ## Session Logs (Working Memory Across Sessions)
 
-`<your-vault>/collaboration/<YYYY-MM-DD>-<topic>.md` holds session retrospectives written for
-future sessions. Distinct from task tracker (task status) and from the zettelkasten proper
-(permanent notes). This is a lab notebook — scoped to the collaboration, written for future-me,
-kept honest about uncertainty.
-
-**At session start** on a topic that may be recurring — long-running projects, ongoing research,
-permission-model design, or anything where prior judgment calls matter — grep the
-`collaboration/` directory for prior entries before diving in. Prior judgment calls,
-carried-forward items, and observed patterns live there.
-
-**Write a new entry** when the session produces judgment calls worth remembering, new
-conventions, corrections worth carrying forward, or longitudinal context for an ongoing project.
-Not every session warrants one; routine work doesn't.
+`<your-vault>/collaboration/<YYYY-MM-DD>-<topic>.md` — lab notebook for judgment calls,
+conventions, and carried-forward context. At session start on recurring topics, grep
+`collaboration/` for prior entries. Write a new entry when the session produces judgment
+calls or corrections worth carrying forward; not every session warrants one.
