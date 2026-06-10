@@ -73,7 +73,7 @@ Example: `https://github.com/apache/hbase/pull/7959`
 When writing code, don't bother making superfluous line comments. If something is not obvious,
 write a comment explaining the WHY. Don't bother explaining WHAT the code is doing.
 
-- **PR Comments**: When commenting on PRs (via `gh api`), sign every comment with a marker that
+- **PR Comments**: When commenting on PRs, sign every comment with a marker that
   identifies it as agent-authored, e.g. `(~Claude)` at the end. When reading PR review comments,
   exclude resolved/outdated comments — use the GitHub API's state field to filter.
 
