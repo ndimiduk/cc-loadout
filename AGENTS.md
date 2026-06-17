@@ -71,6 +71,10 @@ note) are fine to commit directly.
 
 For full triggers and execution rules, see each skill's own `SKILL.md`.
 
+- **`ndimiduk:argument-audit`** — Audit the logical construction of a document:
+  extract claims, test each for grounding and consistency, filter via judge. Use
+  for research designs, trade studies, ADRs, decision records, or any
+  argumentative document.
 - **`ndimiduk:design-challenge`** — Stress-test a design, plan, or technical decision
   before committing to it. Adversarial review across NFRs, failure modes, operational
   complexity, scaling, maintainability, security.
