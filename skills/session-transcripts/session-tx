@@ -115,6 +115,35 @@ def truncate(s: str, n: int) -> str:
     return s[: n - 1] + "\u2026"
 
 
+def _normalize_kw(s: str) -> str:
+    """Strip separators so 'protonvpn' matches 'proton-vpn'."""
+    return re.sub(r"[-_\s]", "", s.lower())
+
+
+def _user_prompts(path: Path, limit: int = 5) -> list[str]:
+    """Return up to `limit` non-sidechain user text prompts."""
+    results = []
+    for _, obj in iter_entries(path):
+        if obj.get("type") != "user" or obj.get("isSidechain"):
+            continue
+        for t in flatten_text((obj.get("message") or {}).get("content")):
+            stripped = t.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("<") and ">" in stripped[:400]:
+                for line in stripped.splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("<"):
+                        results.append(line)
+                        break
+                continue
+            results.append(stripped)
+            break
+        if len(results) >= limit:
+            break
+    return results
+
+
 def _first_user_prompt(path: Path) -> Optional[str]:
     """First non-sidechain user-authored text prompt (skips hook-wrapped content)."""
     for _, obj in iter_entries(path):
@@ -415,6 +444,7 @@ def cmd_grep(args):
 
 def cmd_find(args):
     kw = args.keyword.lower()
+    kw_norm = _normalize_kw(kw)
     cutoff = time.time() - args.days * 86400 if args.days else 0
     hits = []
     for proj in PROJECTS_ROOT.iterdir():
@@ -424,8 +454,14 @@ def cmd_find(args):
             st = f.stat()
             if st.st_mtime < cutoff:
                 continue
-            title = _first_user_prompt(f) or ""
-            if kw in title.lower() or kw in f.name.lower() or kw in proj.name.lower():
+            prompts = _user_prompts(f, limit=5)
+            title = prompts[0] if prompts else ""
+            matched = (
+                kw in f.name.lower()
+                or kw in proj.name.lower()
+                or any(kw in p.lower() or kw_norm in _normalize_kw(p) for p in prompts)
+            )
+            if matched:
                 hits.append((st.st_mtime, f, title))
     hits.sort(reverse=True)
     if args.limit:
