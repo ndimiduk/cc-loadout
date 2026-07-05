@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Claude Pro rate-limit reset indicator for tmux status-right.
+
+Reads the rate-limit cache written by claude-statusline and displays
+how long until each bucket resets.
+
+Output examples:
+    5h 73%→1.4h
+    5h 73%→1.4h  7d 40%→2.3d
+    (empty when no data or all buckets have reset)
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "claude-usage-spark"
+RATE_LIMIT_CACHE = CACHE_DIR / "rate-limits.json"
+
+# Don't show usage % if the cache is older than this (seconds).
+# The reset time is absolute and always accurate; usage % goes stale.
+USAGE_MAX_AGE = 1800
+USAGE_THRESHOLD = 80
+
+
+def fmt_remaining(seconds: float) -> str:
+    if seconds <= 0:
+        return "now"
+    minutes = seconds / 60
+    hours = seconds / 3600
+    days = seconds / 86400
+    if days >= 1:
+        return f"{days:.1f}d"
+    if hours >= 1:
+        return f"{hours:.1f}h"
+    return f"{minutes:.0f}m"
+
+
+def main():
+    if not RATE_LIMIT_CACHE.exists():
+        return
+
+    try:
+        cache = json.loads(RATE_LIMIT_CACHE.read_text())
+    except (json.JSONDecodeError, OSError):
+        return
+
+    rl = cache.get("rate_limits", {})
+    updated_at = cache.get("updated_at", 0)
+    usage_fresh = (time.time() - updated_at) < USAGE_MAX_AGE
+
+    now = time.time()
+    parts = []
+
+    for key, label in [("five_hour", "5h"), ("seven_day", "7d")]:
+        bucket = rl.get(key)
+        if not bucket:
+            continue
+
+        resets_at = bucket.get("resets_at")
+        pct_used = bucket.get("used_percentage", 0)
+
+        if resets_at is None:
+            continue
+        if pct_used < USAGE_THRESHOLD:
+            continue
+
+        remaining = resets_at - now
+        if remaining <= 0:
+            continue
+
+        reset_str = fmt_remaining(remaining)
+
+        if usage_fresh and pct_used:
+            pct_str = f"{pct_used:.0f}" if isinstance(pct_used, float) else str(pct_used)
+            parts.append(f"{label} {pct_str}%→{reset_str}")
+        else:
+            parts.append(f"{label}→{reset_str}")
+
+    if parts:
+        print("  ".join(parts))
+
+
+if __name__ == "__main__":
+    main()

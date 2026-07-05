@@ -25,6 +25,30 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
+## claude-ratelimit-tmux
+
+Rate-limit reset indicator for tmux `status-right`. Reads the cache written by
+`claude-statusline` and shows how long until each rate-limit bucket resets.
+
+```
+5h 73%→1.4h  7d 40%→2.3d
+```
+
+Usage % is shown only if `claude-statusline` has run within the last 30 minutes
+(i.e., an active Claude Code session). The reset time is always accurate because
+it's an absolute timestamp.
+
+### Install
+
+First install `claude-statusline` (it writes the cache this script reads). Then
+add to `~/.tmux.conf`:
+
+```tmux
+set -g status-right '#(/path/to/cc-loadout/tools/claude-ratelimit-tmux) | %H:%M '
+set -g status-right-length 60
+set -g status-interval 60
+```
+
 ## claude-usage-spark
 
 Unicode sparkline of Claude CLI usage for tmux `status-right`. Parses
