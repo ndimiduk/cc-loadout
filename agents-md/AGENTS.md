@@ -159,6 +159,21 @@ If you're unsure whether a command is safe, err toward running it in a read-only
 dry-run mode rather than asking the user to run it for you. Use scratch directories for
 experiments.
 
+## Subagent Model Selection
+
+For coding and research tasks, default to delegating work to a subagent on a cheaper
+model rather than doing it inline. The parent runs on a high-capability model; reserve
+that for judgment, synthesis, and orchestration. Implementation and fact-gathering
+rarely need the same tier.
+
+The constraint: a subagent's errors compound. When the parent will treat output as
+fact — act on it, cite it, feed it to the next step — the model must be reliable
+enough that the parent doesn't need to re-derive the answer to trust it. A wrong
+fact from a cheap model costs more than the model savings.
+
+Skill-specific model guidance (e.g., `ndimiduk:code-review`, `ndimiduk:argument-audit`)
+takes precedence over this default.
+
 ## Ground Truth Over Training Data
 
 Before writing or modifying code, run at least one search (`grep`, `find`, or
