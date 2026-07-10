@@ -174,6 +174,14 @@ fact from a cheap model costs more than the model savings.
 Skill-specific model guidance (e.g., `ndimiduk:code-review`, `ndimiduk:argument-audit`)
 takes precedence over this default.
 
+**Never fork for research.** Use `general-purpose` (or another non-fork `subagent_type`)
+for research agents — fact-gathering, API lookups, codebase searches, doc searches. Forks
+inherit the full conversation context. Research agents that inherit context fixate on
+topics from the parent conversation instead of their assigned task. A fresh agent with a
+self-contained prompt stays on target. Reserve forks for tasks that genuinely need the
+parent's context (e.g., writing code that depends on a design discussion in the
+conversation).
+
 ## Ground Truth Over Training Data
 
 Before writing or modifying code, run at least one search (`grep`, `find`, or
