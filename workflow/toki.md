@@ -6,7 +6,7 @@ Conflating them produces tasks that grow into novellas and notes systems that no
 trusts because the real content is in some closed task somewhere.
 
 `toki` is a local-first CLI task tracker — upstream at https://github.com/harperreed/toki.
-The `ndimiduk:toki` skill (shipped in this loadout under `skills/`) documents the
+The `ndimiduk:toki` skill (from `~/repos/toki/cmd/toki/skill/`) documents the
 opinionated workflow layer on top.
 
 ## Tasks track status; the filesystem holds knowledge
@@ -103,4 +103,4 @@ That's it. The PR diff, the design doc, and the commit history hold everything e
 ## See also
 
 - `agents-md/AGENTS.md` — Knowledge Management and Tagging Convention sections.
-- `skills/toki/SKILL.md` — the opinionated layer this note pairs with (public name `ndimiduk:toki`).
+- `~/repos/toki/cmd/toki/skill/SKILL.md` — the skill this note pairs with (public name `ndimiduk:toki`).

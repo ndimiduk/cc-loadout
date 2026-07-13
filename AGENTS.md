@@ -103,11 +103,9 @@ For full triggers and execution rules, see each skill's own `SKILL.md`.
   distribution, orphan docs not in README, missing frontmatter. Bundles an executable
   `rklint` Python script alongside the SKILL.md; symlinked into `$PATH`
   (`~/.local/bin/rklint`) by `make install`.
-- **`ndimiduk:toki`** — Opinionated workflow conventions for the `toki` task tracker:
-  persistent-vs-ephemeral framing, status-via-tags, concept-tag bridge to a notes
-  vault, when-to-close vs. when-to-wait. Distinct from the upstream toki tool's bare
-  reference SKILL.md at `cmd/toki/skill/`; this is a personal-conventions layer on
-  top of that.
+- **`ndimiduk:toki`** — Workflow conventions for the `toki` task tracker: persistent-vs-ephemeral
+  framing, status-via-tags, concept-tag bridge to a notes vault, when-to-close vs. when-to-wait.
+  Sourced from `~/repos/toki/cmd/toki/skill/`, not shipped in this loadout.
 
 ## Skills assumed available
 

@@ -51,15 +51,10 @@ upstream collection. Install from https://github.com/mattpocock/skills.
 
 Each lives in its own directory under that repo; install per the repo README.
 
-## ndimiduk:toki (note)
+## ndimiduk:toki
 
-The skill itself ships in this repo at `skills/toki/` (public name `ndimiduk:toki`) — it's an opinionated
-workflow layer (persistent-vs-ephemeral framing, status-via-tags, concept-tag bridge to
-a notes vault, when-to-close vs. when-to-wait). Listed here only to point out the
-distinction from the upstream toki tool's own SKILL.md.
-
-The upstream toki tool ships its own bare reference SKILL.md at
-`cmd/toki/skill/SKILL.md` in https://github.com/harperreed/toki. That one documents the
-MCP tools and CLI commands; this loadout's `ndimiduk:toki` adds personal conventions on
-top of that. The two are intentionally different in purpose — install whichever fits
-your needs (or both).
+The skill lives in the toki repo at `cmd/toki/skill/SKILL.md`
+(https://github.com/harperreed/toki). It documents persistent-vs-ephemeral framing,
+status-via-tags, concept-tag bridge to a notes vault, and when-to-close vs. when-to-wait
+conventions. Symlink `~/.claude/skills/ndimiduk:toki` → the skill directory in your
+local clone.

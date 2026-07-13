@@ -255,9 +255,8 @@ worktrees to keep unrelated changes isolated.
 ## Session and Task Management
 
 Use `toki` for all persistent work tracking. Prefer filing tasks over doing work immediately.
-See the `ndimiduk:toki` skill (shipped in this loadout under `skills/`, distinct from the
-upstream toki tool's own bare reference SKILL.md) for CLI conventions and workflow
-details.
+See the `ndimiduk:toki` skill (from `~/repos/toki/cmd/toki/skill/`) for CLI conventions
+and workflow details.
 
 ## Tagging Convention
 
