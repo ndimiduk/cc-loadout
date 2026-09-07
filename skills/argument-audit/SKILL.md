@@ -1,21 +1,18 @@
 ---
 name: argument-audit
 description: >-
-  Audit the logical construction of a document — research designs, trade studies,
-  ADRs, decision records, analysis docs. Extracts every claim, tests each for
-  grounding, logical validity, and internal consistency, then filters findings
-  through a judge for precision. Use when reviewing a research document, design
-  doc, trade study, ADR, or any document that makes arguments; when the user says
-  "pressure-test this", "audit this document", "check the logic", "are these
-  claims grounded", "poke holes in this doc"; when reviewing a PR that changes
-  research or design documents; or before committing to a direction based on a
-  written analysis. Covers comparative evaluations (ADR comparisons, build-vs-buy,
-  vendor comparisons, migration-vs-maintain) and single-proposal documents alike.
-  Also use when the user says "audit this ADR", "pressure-test this evaluation",
-  "review this trade study", "check this comparison". For code review use
-  `ndimiduk:code-review`; for
-  editorial/prose quality use `ndimiduk:prose-review`; for design viability use
-  `ndimiduk:design-challenge`.
+  Audit the logical construction of research designs, trade studies, ADRs,
+  decision records, analysis docs, or any document that makes arguments. Extracts
+  claims, tests grounding, logical validity, and internal consistency, then filters
+  findings through a judge for precision. Use when reviewing a research/design PR;
+  when the user says "pressure-test this", "audit this document", "check the
+  logic", "are these claims grounded", or "poke holes in this doc"; or before
+  committing to a direction based on written analysis. Covers comparative
+  evaluations (ADR, build-vs-buy, vendor comparisons, migration-vs-maintain) and
+  single-proposal documents. Also use for "audit this ADR", "pressure-test this
+  evaluation", "review this trade study", or "check this comparison". For code
+  review use `ndimiduk:code-review`; for prose use `ndimiduk:prose-review`; for
+  design viability use `ndimiduk:design-challenge`.
 ---
 
 # Argument Audit
