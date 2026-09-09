@@ -1,7 +1,42 @@
 # tools/
 
-Standalone scripts for Claude Code and tmux integration. Not skills — these are
-invoked by settings.json or shell config, not by Claude as agent capabilities.
+Standalone scripts for coding-agent and tmux integration. Not skills — these are
+invoked by settings.json, shell config, or agent harness integration, not as agent
+capabilities.
+
+## agent-usage-spark
+
+Unified usage sparkline for supported coding agents. It currently aggregates Claude
+Code sessions from `~/.claude/projects/` and Pi sessions from `~/.pi/agent/sessions/`.
+Both stores are scanned recursively. Assistant records are de-duplicated within each
+agent by record ID, so resumed sessions do not recount copied history. When a provider
+writes multiple usage snapshots for one record, the snapshot with the largest recorded
+usage is retained.
+Pi's recorded usage includes provider-reported cost data; Claude uses cached
+LiteLLM pricing data. Neither is a statement of the final invoice: provider billing,
+credits, routing, and pricing revisions can differ. The output is deliberately labeled
+as an estimate.
+
+The default is a cost estimate, marked with `~` and `est`. Sessions whose model
+cannot be priced are excluded from the estimate and shown as `+?` rather than being
+silently counted as zero. Parsed records are cached per file using its modified time
+and size, so unchanged transcripts are not reparsed. Cache rebuilds use a Unix
+advisory lock; concurrent invocations reuse the previous cache instead of scanning
+in parallel. The lock is released automatically if the rebuilding process exits.
+
+```
+agent-usage-spark                  # estimated cost
+agent-usage-spark --tokens          # input + output token total
+agent-usage-spark --days 30         # 12 buckets covering the same 30-day window
+```
+
+Install in tmux:
+
+```tmux
+set -g status-right '#(/path/to/cc-loadout/tools/agent-usage-spark) | %H:%M '
+set -g status-right-length 60
+set -g status-interval 300
+```
 
 ## claude-statusline
 
@@ -47,33 +82,6 @@ add to `~/.tmux.conf`:
 set -g status-right '#(/path/to/cc-loadout/tools/claude-ratelimit-tmux) | %H:%M '
 set -g status-right-length 60
 set -g status-interval 60
-```
-
-## claude-usage-spark
-
-Unicode sparkline of Claude CLI usage for tmux `status-right`. Parses
-`~/.claude/projects/*.jsonl` session files and caches the results.
-
-```
-▁▂▃▅▇▃▂ 4.8M tok
-▁▂▃▅▇▃▂ $1.4k
-```
-
-Two modes:
-
-- **Token count** (default) — total input+output tokens, no network calls
-- **Cost estimate** (`--cost`) — estimated USD via LiteLLM pricing data (cached daily)
-
-### Install
-
-Add to `~/.tmux.conf`:
-
-```tmux
-set -g status-right '#(/path/to/cc-loadout/tools/claude-usage-spark) | %H:%M '
-# or with cost:
-set -g status-right '#(/path/to/cc-loadout/tools/claude-usage-spark --cost) | %H:%M '
-set -g status-right-length 60
-set -g status-interval 300
 ```
 
 ## Requirements
