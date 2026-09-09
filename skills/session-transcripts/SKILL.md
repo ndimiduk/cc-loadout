@@ -1,5 +1,6 @@
 ---
 name: session-transcripts
+package: ndimiduk
 description: Use when analyzing, reviewing, diffing, or auditing Claude Code session transcripts — extracting messages, tool uses, subagent invocations, or cross-session patterns for skill extraction, post-mortems, or toil audits. Triggers on "review this session", "diff these transcripts", "what went wrong in session X", "find sessions where…", "look through recent sessions", or when the user references a session UUID.
 ---
 

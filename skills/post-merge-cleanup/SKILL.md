@@ -1,5 +1,6 @@
 ---
 name: post-merge-cleanup
+package: ndimiduk
 description: Use when the user reports that a PR or branch has been merged, shipped, or landed — clean up the corresponding local tracking branch, prune remote refs, and remove the worktree if one was used. Triggers on "merged", "both merged", "shipped", "landed", "PR landed", "it's in", or similar terminal status reports about work done in this session.
 ---
 

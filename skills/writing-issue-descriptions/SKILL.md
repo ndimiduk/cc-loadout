@@ -1,5 +1,6 @@
 ---
 name: writing-issue-descriptions
+package: ndimiduk
 description: MANDATORY when producing any text destined for an issue tracker — JIRA descriptions, GitHub issue bodies, bug reports, feature requests, follow-up tickets. Triggers on "draft/write/open an issue", "file a ticket/bug/follow-up", "write the JIRA", "put together a JIRA", "ticket description", "body text for the issue", "write up something for JIRA", or any request whose output will be pasted into an issue tracker.
 ---
 

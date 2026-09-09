@@ -1,5 +1,6 @@
 ---
 name: requirements-hardening
+package: ndimiduk
 description: Use when reviewing or writing a requirements document to verify each statement is actually a requirement of the system under evaluation. Triggers on "harden these requirements", "are these actually requirements", "review these requirements", "spot-check these requirements", or when a requirements doc is being written or revised. Classification audit, not design interrogation — for design stress-testing, use `ndimiduk:design-challenge` instead.
 ---
 

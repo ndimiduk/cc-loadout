@@ -1,5 +1,6 @@
 ---
 name: validate-idea
+package: ndimiduk
 description: Use when someone mentions a product idea at ANY stage of clarity -- even vague preambles like "I've been thinking about building...", "I've been noodling on an idea", "I want to build something that...". Also triggers on "is this worth building", "is there a market", "is this stupid", "should I bother", demand validation, competitor concerns, or deciding startup vs side project. Invoke EARLY -- this skill structures vague ideas into concrete ones. Sits upstream of write-a-prd and grill-me.
 ---
 

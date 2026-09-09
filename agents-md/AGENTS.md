@@ -89,8 +89,16 @@ When writing code, don't bother making superfluous line comments. If something i
 write a comment explaining the WHY. Don't bother explaining WHAT the code is doing.
 
 - **PR Comments**: When commenting on PRs, sign every comment with a marker that
-  identifies it as agent-authored, e.g. `(~Claude)` at the end. When reading PR review comments,
-  exclude resolved/outdated comments — use the GitHub API's state field to filter.
+  identifies it as agent-authored using the actual model name, e.g. `(~Claude)` or
+  `(~GLM-5.2)` at the end. When reading PR review comments, exclude resolved/outdated comments
+  — use the GitHub API's state field to filter.
+- **Commit attribution**: Every commit an agent authors or co-authors must carry a
+  `Co-Authored-By: <Model> <email>` trailer identifying the model that actually produced the
+  work. Be honest about the model identity — never attribute to a vendor whose model didn't
+  write the code. Determine the real model from the environment (`PI_MODEL`, `ANTHROPIC_MODEL`,
+  or the session's stated model) rather than guessing. Use a vendor-appropriate placeholder email:
+  `noreply@anthropic.com` only for Anthropic models, `noreply@zhipu.ai` for GLM, etc. Match the
+  existing convention in the repo's history when one exists.
 
 ## Tool Usage
 

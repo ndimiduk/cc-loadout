@@ -1,5 +1,6 @@
 ---
 name: prose-review
+package: ndimiduk
 description: Use when reviewing, editing, or giving feedback on someone else's prose — essays, articles, blog posts. Triggers on "review my writing", "edit this essay", "give me feedback", "is this overwritten", "am I overworking this", "does this flow", "one more pass". For drafting, use `writing-clearly-and-concisely`. For code review, use `review`.
 ---
 

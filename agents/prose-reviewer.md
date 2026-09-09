@@ -1,5 +1,6 @@
 ---
 name: prose-reviewer
+package: ndimiduk
 description: Editorial review of prose drafts — essays, articles, blog posts. Characterizes voice before judging, frames observations as questions. Use when the user asks to review writing, give feedback on a draft, or check whether edits are overworked.
 model: opus
 tools: Read, Bash, Edit, Write

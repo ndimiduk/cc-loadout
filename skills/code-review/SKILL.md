@@ -1,5 +1,6 @@
 ---
 name: code-review
+package: ndimiduk
 description: >-
   Code review with judge filtering and source attribution. Use when reviewing a
   diff, PR, or set of changes for correctness, architecture, and risk. Triggers

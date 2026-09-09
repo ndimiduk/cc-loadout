@@ -1,5 +1,6 @@
 ---
 name: research-lint
+package: ndimiduk
 description: Use when checking health of a markdown knowledge base — orphan docs, missing frontmatter, tag drift, or when the user says "lint", "health check", or "what needs attention" in a research/wiki repo
 ---
 

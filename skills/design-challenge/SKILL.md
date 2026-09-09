@@ -1,5 +1,6 @@
 ---
 name: design-challenge
+package: ndimiduk
 description: Use when stress-testing a design, plan, or technical decision BEFORE committing to it. Triggers on "grill me", "challenge this", "poke holes", "stress test this design", "is this the right approach", or when about to commit to any design direction. Also use for system design sessions where NFRs, failure modes, and operational concerns must be surfaced. For requirements documents specifically, use `ndimiduk:requirements-hardening` instead.
 ---
 
