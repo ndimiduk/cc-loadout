@@ -55,9 +55,14 @@ runtime. Override the destination when needed, for example:
 make install-pi PI_USER=/path/to/pi/agent
 ```
 
-Source directories stay bare-named; the `ndimiduk:` prefix is applied only at
-the symlink level. Edits to source files are immediately live. Restart sessions
-or reload plugins as supported by the agent runtime.
+Source directories stay bare-named; the `ndimiduk:` prefix is applied at the
+symlink level **and** baked into each skill's `name:` frontmatter. Both are
+required for a consistent skill identity across runtimes: Claude Code derives
+the invocation name from the install directory, while opencode and Pi derive it
+from the `name:` field. Keeping `name:` equal to the prefixed symlink dir makes
+the skill resolve as `ndimiduk:<skill>` in all three. (The `package:` field is
+not read by any of them — omit it.) Edits to source files are immediately live.
+Restart sessions or reload plugins as supported by the agent runtime.
 
 To remove all symlinks managed by this repo:
 

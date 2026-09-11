@@ -1,6 +1,5 @@
 ---
-name: ship-task
-package: ndimiduk
+name: ndimiduk:ship-task
 description: >-
   End-to-end task lifecycle — orient, implement, self-verify, self-review, open PR,
   acceptance tests, peer review, hand off. Chains existing skills with phase gates

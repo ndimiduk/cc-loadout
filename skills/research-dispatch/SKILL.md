@@ -1,6 +1,5 @@
 ---
-name: research-dispatch
-package: ndimiduk
+name: ndimiduk:research-dispatch
 description: Use before dispatching any subagent whose findings will be input to downstream work - research, investigation, audits, code searches where incorrect findings would poison implementation decisions
 ---
 

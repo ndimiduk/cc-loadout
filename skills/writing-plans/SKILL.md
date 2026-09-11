@@ -1,6 +1,5 @@
 ---
-name: writing-plans
-package: ndimiduk
+name: ndimiduk:writing-plans
 description: Use when you have a spec or requirements for a multi-step implementation and need to create a phased, risk-ordered plan with validation gates. OVERRIDES superpowers:writing-plans — use this version instead.
 ---
 

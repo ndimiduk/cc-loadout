@@ -1,5 +1,5 @@
 ---
-name: document-discipline
+name: ndimiduk:document-discipline
 description: Use whenever writing or revising prose that other people will read in a file or tracker — research and design docs, README/markdown, issue and PR bodies, commit messages, review notes, code comments, changelogs. Keeps the artifact standalone and free of revision residue: no self-correction narration, no warnings against framings the text no longer contains, no meta-commentary about your own editing process. Triggers on drafting or editing any prose-bearing file, and especially on any multi-pass revision where an earlier draft could leak into the final text. If the `writing-clearly-and-concisely` skill is available, load and use it too.
 ---
 
