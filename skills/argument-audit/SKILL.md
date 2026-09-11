@@ -1,5 +1,5 @@
 ---
-name: ndimiduk:argument-audit
+name: ndimiduk-argument-audit
 description: >-
   Audit the logical construction of research designs, trade studies, ADRs,
   decision records, analysis docs, or any document that makes arguments. Extracts

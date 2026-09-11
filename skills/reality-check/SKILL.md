@@ -1,5 +1,5 @@
 ---
-name: ndimiduk:reality-check
+name: ndimiduk-reality-check
 description: MANDATORY validation before claiming any work is complete, fixed, or passing - verifies solution actually solves the stated problem without drift; use before marking major todos complete, before commits, before PRs
 ---
 
