@@ -59,6 +59,20 @@ as spin. This is not a mandate for flat, lifeless prose — a vivid, exact verb 
 hyperbole. Cut the framing that flatters the design; keep the words that carry
 information.
 
+## Reference other repos by full URL
+
+A durable doc is read outside the tracker that renders its bare `#123`. A `#123`
+resolves only in its own repo; in a doc that lives in a different repo it is
+ambiguous or dead. Reference an issue or PR in another repo by its full URL,
+rendered as a markdown link whose text stays the human-readable ref:
+
+- `[#123](https://github.com/foo/bar/issues/123)`
+- `[bar#123](https://github.com/foo/bar/pull/123)`
+
+A bare `#123` is acceptable only for an issue/PR in the doc's own repo. Never leave
+a bare cross-repo `#123`. (In terminal or chat output, prefer the bare URL; in a
+markdown doc, the link form keeps the prose readable.)
+
 ## Verify by reading, not grep
 
 This pollution is semantic, not lexical — grep will not catch it. Before finalizing
