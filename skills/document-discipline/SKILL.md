@@ -1,6 +1,6 @@
 ---
 name: ndimiduk-document-discipline
-description: Use whenever writing or revising prose that other people will read in a file or tracker — research and design docs, README/markdown, issue and PR bodies, commit messages, review notes, code comments, changelogs. Keeps the artifact standalone and free of revision residue — no self-correction narration, no warnings against framings the text no longer contains, no meta-commentary about your own editing process. Triggers on drafting or editing any prose-bearing file, and especially on any multi-pass revision where an earlier draft could leak into the final text. If the `writing-clearly-and-concisely` skill is available, load and use it too.
+description: Use whenever writing or revising prose that other people will read in a file or tracker — research and design docs, README/markdown, issue and PR bodies, commit messages, review notes, code comments, changelogs. Keeps the artifact standalone and free of revision residue — no self-correction narration, no warnings against framings the text no longer contains, no meta-commentary about your own editing process, and a neutral register that describes the work rather than selling it. Triggers on drafting or editing any prose-bearing file, and especially on any multi-pass revision where an earlier draft could leak into the final text. If the `writing-clearly-and-concisely` skill is available, load and use it too.
 ---
 
 # Document Discipline
@@ -34,6 +34,30 @@ confidence — straightforward statutory language"), genuine reader-guidance ("n
 but Y" when X is a tempting *independent* misreading), and acknowledged strengths
 ("credit where due"). The test: does the sentence serve a first-time reader, or
 only answer a draft they never saw?
+
+## Keep the register neutral
+
+A durable technical doc describes; it does not sell its own design. Cut language
+that asks the reader to admire the work rather than understand it:
+
+- **Grand causal framing** — "X is what keeps/lets/makes Y". State the mechanism:
+  "X keeps Y", or just say what X does.
+- **Salesy lead-ins** — "The payoff:", "The beauty is", "The key insight:",
+  "Here's the clever part". Drop the lead-in; state the thing.
+- **Superlative flourishes** — "the one X that…", "the whole point", "the entire
+  reason". The superlative rarely adds what the plain noun doesn't.
+- **Unearned absolutes** — "All correctness lives here", "never", "always",
+  "guarantees" — unless the claim is literally exhaustive. Prefer the precise scope.
+- **Rhetorical emphasis** — italics or bold used for punch ("its resource *is* its
+  plan") rather than to disambiguate. Say it plainly.
+- **Chatty asides** — "so you get a head start", "as you'd expect", "believe it or
+  not".
+
+The test: would the sentence survive a reader who is skeptical of the author?
+Description informs that reader; ornamentation asks them to be impressed and reads
+as spin. This is not a mandate for flat, lifeless prose — a vivid, exact verb is not
+hyperbole. Cut the framing that flatters the design; keep the words that carry
+information.
 
 ## Verify by reading, not grep
 
