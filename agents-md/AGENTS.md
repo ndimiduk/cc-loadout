@@ -239,6 +239,8 @@ claims whose falsehood would break the most and verify those — replace their t
 citations. For a load-bearing specific a bounded search or subagent can settle, check rather than
 reason: a wrong fact others build on costs far more than the check. This front-loads the
 verification the skeptical review passes would otherwise catch late; it does not replace them.
+As a standing step, run `ndimiduk:argument-audit` on a design doc or plan before treating it as
+final — opening its PR, handing it off, or acting on it — and resolve what it surfaces first.
 
 ## Build Verification
 
