@@ -207,6 +207,33 @@ data is stale and generic; the repo in front of you is current and specific.
 This applies to debugging too. Read the actual error, read the actual code path, trace
 the actual data flow. Don't pattern-match the error message to a training-set solution.
 
+This is not only about code. The same rule governs **factual claims about how a system
+behaves** — an error type, a wire format, a control-flow path, an access-control outcome —
+written into any durable artifact: a design doc, plan, issue, PR, or review. A claim about a
+specific codebase you have not read is a guess; verify it against source or docs, or mark it
+inferred/assumed in the text. Smooth, confident prose about a subsystem's internals with no file
+open is training-data pattern-matching, not knowledge — treat that fluency as a stop-and-verify
+signal, not a green light.
+
+Distinguish two kinds of claim. General mechanics — how Avro unions frame bytes, how a JWT
+validates, how a B-tree splits — are fair to reason about from knowledge. How *this* repo wires
+them — which exception type a method throws, whether a reconciler revokes or only adds, what a
+response model actually contains — must be verified or labeled. The failures this rule exists to
+prevent are the second kind masquerading as the first.
+
+Label grounding as you write, not after. A load-bearing mechanism claim is *confirmed* (checked
+against a named source), *inferred* (reasoned, not checked), or *assumed* (no basis) — never
+write an inferred or assumed claim as flat fact. For a load-bearing claim about an unfamiliar
+subsystem, when a bounded search or subagent can settle it, the default is to check, not to
+reason: a wrong fact propagated into a design others act on costs far more than the check. Before
+finalizing a design, name the two or three claims whose falsehood would break the most, and
+verify those first.
+
+Keep this calibrated: it bites on claims that are both load-bearing *and* about specifics you
+have not read — not on every sentence (over-verifying is its own failure; see
+`ndimiduk:document-discipline`). It moves verification earlier; it does not replace the skeptical
+review passes that catch what slips through.
+
 ## Build Verification
 
 Run the project's build and test suite on your changes before claiming they work. A
