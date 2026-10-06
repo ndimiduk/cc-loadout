@@ -219,14 +219,20 @@ them — which exception a method throws, whether a reconciler revokes or only a
 response model contains — is a repo specific. When unsure which kind a claim is, treat it as
 specific.
 
-The rule is structural, not introspective — you cannot rely on noticing your own uncertainty,
-because confident-wrong does not feel uncertain. So: **no unlabeled repo specifics in a durable
-artifact.** Every specific behavioral claim either cites its source (a `file:line`, a doc, a
-command's output) or carries an explicit *inferred* (reasoned, not checked) or *assumed* (no
-basis) tag. `confirmed` requires the citation — absent one, the claim is inferred or assumed and
-says so, so a guess cannot pass as fact by feeling solid. The citation or tag is part of the
-claim, not a narration of how you got there, so it satisfies Output Discipline rather than
-violating it.
+The discipline is structural, not introspective — you cannot rely on noticing your own
+uncertainty, because confident-wrong does not feel uncertain. So in a heavyweight artifact (a
+design doc, plan, or proposal that others will build on), a **load-bearing repo specific** — one
+a reader would act on — must either cite its source (a `file:line`, a doc, a command's output)
+or carry an explicit *inferred* tag (reasoned from general mechanics, not checked against this
+repo). `confirmed` requires the citation, so a guess cannot pass as fact by reading solid. There
+is no "assumed" escape: a claim you have no basis for is not something to label and ship — verify
+it or cut it. A citation or an *inferred* tag is metadata on the claim, not a narration of how
+you got there, so it satisfies Output Discipline and survives a `document-discipline` pass rather
+than being stripped as hedging.
+
+Lighter artifacts — a PR comment, a short issue — carry their epistemic status in context and
+need no per-claim tags; there the floor is only: don't assert a load-bearing repo specific you
+haven't checked.
 
 Labeling is the floor; verifying is better. Before finalizing a design, name the two or three
 claims whose falsehood would break the most and verify those — replace their tags with
