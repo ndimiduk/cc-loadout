@@ -210,29 +210,29 @@ the actual data flow. Don't pattern-match the error message to a training-set so
 This is not only about code. The same rule governs **factual claims about how a system
 behaves** — an error type, a wire format, a control-flow path, an access-control outcome —
 written into any durable artifact: a design doc, plan, issue, PR, or review. A claim about a
-specific codebase you have not read is a guess; verify it against source or docs, or mark it
-inferred/assumed in the text. Smooth, confident prose about a subsystem's internals with no file
-open is training-data pattern-matching, not knowledge — treat that fluency as a stop-and-verify
-signal, not a green light.
+specific codebase you have not read is a guess, even when it reads fluently; confident prose is
+not evidence.
 
-Distinguish two kinds of claim. General mechanics — how Avro unions frame bytes, how a JWT
+Separate two kinds of claim. General mechanics — how Avro unions frame bytes, how a JWT
 validates, how a B-tree splits — are fair to reason about from knowledge. How *this* repo wires
-them — which exception type a method throws, whether a reconciler revokes or only adds, what a
-response model actually contains — must be verified or labeled. The failures this rule exists to
-prevent are the second kind masquerading as the first.
+them — which exception a method throws, whether a reconciler revokes or only adds, what a
+response model contains — is a repo specific. When unsure which kind a claim is, treat it as
+specific.
 
-Label grounding as you write, not after. A load-bearing mechanism claim is *confirmed* (checked
-against a named source), *inferred* (reasoned, not checked), or *assumed* (no basis) — never
-write an inferred or assumed claim as flat fact. For a load-bearing claim about an unfamiliar
-subsystem, when a bounded search or subagent can settle it, the default is to check, not to
-reason: a wrong fact propagated into a design others act on costs far more than the check. Before
-finalizing a design, name the two or three claims whose falsehood would break the most, and
-verify those first.
+The rule is structural, not introspective — you cannot rely on noticing your own uncertainty,
+because confident-wrong does not feel uncertain. So: **no unlabeled repo specifics in a durable
+artifact.** Every specific behavioral claim either cites its source (a `file:line`, a doc, a
+command's output) or carries an explicit *inferred* (reasoned, not checked) or *assumed* (no
+basis) tag. `confirmed` requires the citation — absent one, the claim is inferred or assumed and
+says so, so a guess cannot pass as fact by feeling solid. The citation or tag is part of the
+claim, not a narration of how you got there, so it satisfies Output Discipline rather than
+violating it.
 
-Keep this calibrated: it bites on claims that are both load-bearing *and* about specifics you
-have not read — not on every sentence (over-verifying is its own failure; see
-`ndimiduk:document-discipline`). It moves verification earlier; it does not replace the skeptical
-review passes that catch what slips through.
+Labeling is the floor; verifying is better. Before finalizing a design, name the two or three
+claims whose falsehood would break the most and verify those — replace their tags with
+citations. For a load-bearing specific a bounded search or subagent can settle, check rather than
+reason: a wrong fact others build on costs far more than the check. This front-loads the
+verification the skeptical review passes would otherwise catch late; it does not replace them.
 
 ## Build Verification
 
