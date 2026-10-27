@@ -173,6 +173,11 @@ UNCHECKED too.
   If the author addressed the issue, the finding is the gap in that mitigation
   and is rated as that gap.
 - **Novelty**: check the base branch.
+- **Fix**: check the suggested fix against the code it touches: visibility
+  and package of every member it uses or adds, signatures, callers it would
+  break, and whether the change makes the test fail when the bug is present.
+  A wrong fix doesn't drop the finding; replace it with a fix that passes
+  these checks, or mark it "needs research".
 
 **Verdict:**
 
@@ -193,7 +198,8 @@ UNCHECKED too.
 - Assign severity from VERIFIED claims only. A test-coverage gap is low,
   unless the code it fails to cover is broken today.
 - End each finding with a gate line, e.g.
-  `Gate: mechanism ✓ trigger ✓ impact ✓ novelty ✓ → REPORT, medium`.
+  `Gate: mechanism ✓ trigger ✓ impact ✓ novelty ✓ fix ✓ → REPORT, medium`,
+  where `fix ✗` means the fix was replaced and says why.
 
 **Also drop:**
 
