@@ -1,44 +1,22 @@
 ---
 name: ndimiduk-code-review
 description: >-
-  Code review with judge filtering and source attribution. Use when reviewing a
-  diff, PR, or set of changes for correctness, architecture, and risk. Triggers
-  on "review this", "code review", "check my changes", "review the diff", or
-  before merging. Supports --comment (post to PR), --fix (apply fixes to working
-  tree), and --re-review (focus on changes since last review). Pressure-tested
-  against production PRs: caught 6/6 known bugs from a commercial review bot
-  plus 5 additional findings with 0 false positives. For prose review use
-  `ndimiduk:prose-review`; for design review use `ndimiduk:design-challenge`.
+  Use when reviewing a diff, PR, or set of changes for correctness,
+  architecture, and risk: "review this", "code review", "check my changes",
+  "review the diff", or before merging. Also use when the user questions
+  findings from a code review already reported in the session: "are you
+  sure", "pressure-test the findings", "double-check those", "is that real".
+  Flags: --comment, --fix, --re-review. For prose use
+  `ndimiduk:prose-review`; for documents and designs use
+  `ndimiduk:argument-audit` or `ndimiduk:design-challenge`.
 ---
 
 # Code Review
 
-Review pipeline: context gathering, one tool-augmented reviewer, judge-filtered for
-precision, source attribution on every finding.
-
-## Architecture
-
-```
-  ┌─────────────┐
-  │  0. Context  │  Gather project docs, CLAUDE.md, REVIEWING.md, memex
-  └──────┬──────┘
-         │
-  ┌──────▼──────┐
-  │  1. Review   │  One reviewer agent with tool access
-  │              │  (+ optional risk agent for large diffs)
-  └──────┬──────┘
-         │
-  ┌──────▼──────┐
-  │  2. Judge    │  Verify every finding: CORRECT / INCORRECT / UNVERIFIABLE
-  └──────┬──────┘
-         │
-  ┌──────▼──────┐
-  │  3. Output   │  Filtered findings with source citations
-  └─────────────┘
-```
-
-The quality comes from giving one reviewer deep context and tool access, then
-filtering aggressively for precision. Not from multiplying shallow opinions.
+Four phases: the coordinator gathers context, a reviewer agent with tool
+access finds issues, a judge agent tries to refute each one, and the
+coordinator reports what survives with citations. Questions about reported
+findings go through the Re-check Protocol.
 
 ## Flags
 
@@ -59,9 +37,10 @@ review grounded rather than vibes-based. Inject all of it into the reviewer prom
    `.github/CODEOWNERS` — read from repo root and from directories touched by
    the diff.
 2. **Diff scope**: `git diff --stat {BASE}..{HEAD}`.
-3. **Full diff**: `git diff {BASE}..{HEAD}`. For large diffs (>2000 lines
-   changed), provide a file list and instruct the reviewer to fetch per-file
-   diffs via tool calls instead.
+3. **Full diff**: `git diff {BASE}..{HEAD}`. For large diffs (>1000 lines
+   changed), provide a file list instead. Instruct reviewers and judges to
+   read per-file diffs, never print the full diff, and write findings to a
+   file as they go so a context overflow doesn't lose the work.
 
 **Gather when available:**
 
@@ -135,21 +114,24 @@ large diffs), all project context from Phase 0, and tool access.
   condition exists, check whether it's applied early enough in the call
   chain to avoid wasted work.
 
-The reviewer returns findings as a structured list. Each finding must include:
-- File path and line range
-- Description of the issue
-- Why it matters (impact)
-- Suggested fix (concrete, or "no obvious fix" if none)
-- Source basis: what evidence supports this finding (diff line, project doc,
-  codebase grep, git history, web search result)
+The reviewer returns a list of findings. Each finding states these claims
+separately, each with a source (diff line, `file:line`, doc, command output)
+or `UNCHECKED`:
 
-**Risk focus areas** (integrated into the primary reviewer prompt):
+- **Location**: file and line range
+- **Mechanism**: what the code does wrong
+- **Trigger**: the production caller chain from an entry point (RPC, worker,
+  job, deploy step). Test, fixture, and dead callers don't count.
+- **Impact**: what breaks, for whom, how often, how long. Each bound
+  ("permanently", "every run", "30 days") is a separate claim.
+- **Mitigations**: retries, recovery paths, guards, and the PR's own docs or
+  comments that address the issue
+- **Novelty**: base-branch behavior for the same trigger
+- **Fix**: concrete, or "no obvious fix"
 
-The primary reviewer also checks these. In pressure testing, a single
-reviewer with tool access caught runtime-dependency risk, cache resilience
-gaps, and rollout concerns — a separate risk agent added no value for diffs
-under ~1000 lines. Folding risk into the primary reviewer keeps context
-unified and avoids deduplication overhead.
+The reviewer does not assign severity; the judge does.
+
+**Risk focus areas** (also checked by the primary reviewer):
 
 - **Runtime resilience**: New external dependencies in hot paths — what happens
   when they're slow or down? Is there a timeout? Does the cache handle refresh
@@ -163,50 +145,81 @@ unified and avoids deduplication overhead.
 
 **Optional: Split risk agent** (for very large diffs only)
 
-For diffs >1500 lines or >20 files, the primary reviewer's context may not fit
+For diffs >1000 lines or >20 files, the primary reviewer's context may not fit
 the full diff plus risk analysis. In that case, dispatch a separate risk agent
 in parallel with the same focus areas above. Merge outputs before the judge.
 
 ### Phase 2: Judge
 
-Dispatch a judge agent that receives the full diff AND all findings from Phase 1.
-The judge independently evaluates each finding.
+Dispatch a judge with the full diff and all Phase 1 findings. The judge tries
+to refute each claim; a confirmed mechanism alone does not confirm a finding.
+Mark each claim VERIFIED or REFUTED with a citation, or UNCHECKED. No hedging.
+A citation is a `file:line`, doc, or command output that shows the claim
+directly. "Follows from the mechanism" is an inference, so the claim is
+UNCHECKED. An UNCHECKED claim records the searches that were run and why
+they were inconclusive. A claim whose required search wasn't run is not
+UNCHECKED; run the search. A claim that depends on an UNCHECKED claim is
+UNCHECKED too.
 
-**Judge instructions:**
+**Required searches:**
 
-Use definitive language. No hedging ("could", "might", "perhaps"). Either the
-finding is real and verified, or it's not.
+- **Trigger**: trace callers to an entry point, ignoring tests and fixtures.
+- **Impact**: find the code that sets each bound (naming, TTLs, retry counts,
+  thresholds, client timeouts). Trace what happens after the failure: the
+  operation's own cleanup and retries, and the next run. A claim of
+  "permanent", "only", or "no other" requires searching for the alternative,
+  such as a recovery path or a second guard.
+- **Mitigations**: read the PR description, changed docs, and nearby comments.
+  If the author addressed the issue, the finding is the gap in that mitigation
+  and is rated as that gap.
+- **Novelty**: check the base branch.
 
-**For each finding, classify as:**
+**Verdict:**
 
-- **CORRECT** — Keep. Technical claim verified against the diff, project docs,
-  or codebase. Finding is actionable and non-trivial.
-- **INCORRECT** — Remove. Reasons include:
-  - Pre-existing issue not introduced by this diff
-  - False positive that doesn't survive scrutiny
-  - Automated tooling already catches it (linter, compiler, type checker, CI)
-  - Generic quality suggestion not grounded in project conventions
-  - Unverified claim about an API or method (reviewer assumed without checking)
-  - Nitpick a senior engineer wouldn't raise
-  - Sycophantic or filler content ("great use of X")
-  - Duplicate of another finding
-  - Suggestion on lines the author didn't modify
-- **UNVERIFIABLE** — Keep only if potential impact is high (data loss, security,
-  correctness). Otherwise remove.
+- Report only if mechanism, trigger, impact, and novelty are all VERIFIED.
+  Drop findings with an UNCHECKED claim, unless the user asked for a
+  thorough review; then report them labeled and rated low.
+- Drop if the mechanism, trigger, or novelty is REFUTED. If the impact as
+  worded is REFUTED, restate it as the consequence the code shows; drop only
+  if no consequence survives.
+- Drop if the behavior is the design's intent, as stated in docs or
+  comments. A hazard the docs warn about is a mitigation, not intent.
+- There is no informational tier.
+- Merge findings that share a root cause, such as two paths into the same
+  non-idempotent handler.
+- Impact is VERIFIED at the furthest consequence that has a citation, such
+  as "publishes a duplicate Kafka event". Cut everything past that point,
+  such as "consumers double-count", and rate what remains.
+- Assign severity from VERIFIED claims only. A test-coverage gap is low,
+  unless the code it fails to cover is broken today.
+- End each finding with a gate line, e.g.
+  `Gate: mechanism ✓ trigger ✓ impact ✓ novelty ✓ → REPORT, medium`.
 
-**Confidence scoring** (0-100):
-- 0-25: Likely false positive
-- 25-50: Might be real, can't verify
-- 50-75: Probably real, verified against diff but not full codebase
-- 75-100: Verified against diff AND project context
+**Also drop:**
 
-**Threshold**: Findings scoring < 75 are dropped. Lower to ≥ 50 if the user
-explicitly requests a thorough/paranoid review.
+- Issues automated tooling catches (linter, compiler, type checker, CI)
+- Generic quality suggestions not grounded in project conventions
+- API claims the reviewer didn't check
+- Nitpicks a senior engineer wouldn't raise
+- Filler ("great use of X")
+- Duplicates
+- Suggestions on lines the author didn't modify
 
-The judge may also revise finding descriptions for clarity or merge near-duplicate
-findings, but must NOT invent new findings.
+The judge may reword or merge findings but must not invent new ones.
+
+**Ledger.** The judge returns every claim with its status and citation. The
+coordinator writes this to a scratch file (`review-ledger-<pr>-<sha>.md`) and
+cites the path in the output. Re-checks start from the ledger.
 
 ### Phase 3: Output
+
+**Report the ledger as is.** The coordinator does not raise severity, add
+impact bounds, or reach a merge verdict the ledger doesn't support. To overrule
+the judge, it records new evidence in the ledger first. "I verified this" names
+and cites the claims it covers.
+
+**Re-check high or blocking findings** with the protocol below before
+presenting them.
 
 **Source attribution**: Every surviving finding cites its basis:
 - `DIFF` — specific diff lines exhibiting the issue
@@ -226,11 +239,14 @@ Found N issues:
 
    file.py:42-45
 
-   Why: explanation of impact
+   Trigger: production caller chain
+   Impact: verified bounds only
+   Mitigations: what was checked, what was found
    Fix: concrete suggestion
 
 ...
 
+Ledger: <path to claim ledger>
 Sources consulted:
 - [project docs, codebase files, web URLs read during review]
 ```
@@ -238,11 +254,28 @@ Sources consulted:
 Zero issues is a valid outcome. Report "No issues found" with a summary of what
 was checked and which project docs were consulted.
 
-**`--fix` mode**: Apply CORRECT findings (confidence ≥ 75) with concrete fix
-suggestions to the working tree. Show what was applied.
+**`--fix` mode**: Apply reported findings that have a concrete fix. Show what
+was applied.
 
 **`--comment` mode**: Post findings as inline PR comments via `gh`. Use full SHA
-in file links. Sign comments with `(~Claude)`.
+in file links. Sign comments with `(~Claude)`. Never post an UNCHECKED claim.
+
+## Re-check Protocol
+
+For "are you sure", "pressure-test", "double-check", and the Phase 3 self-check:
+
+1. Re-read the ledger file, not your summary. If the PR head has moved past
+   the reviewed SHA, say so and check whether later commits changed the
+   finding.
+2. Rerun the judge's searches, weakest claims first: UNCHECKED, impact bounds,
+   triggers, mitigations.
+3. Change a claim's status only with cited evidence not already in the
+   ledger, or by showing its existing citation doesn't support it. The
+   question itself is not evidence. A surviving claim keeps its status and
+   citation; "all findings hold" is a valid answer.
+4. Report only the changes: finding, claim, before, after, new evidence, and
+   resulting severity. List unchanged findings in one line. Update the ledger.
+5. For each change, name the search the first pass skipped.
 
 ## NEVER Comment On
 
@@ -277,34 +310,12 @@ subsequent passes.
 
 ## Model Selection
 
-The reviewer and judge agents can run on different models. The tradeoffs:
-
-**Sonnet (default)**: Fast, cheap, and in pressure testing produced the
-strongest reviews. On a ~350-line feature PR that migrated an authorization
-heuristic to a proper API, Sonnet caught: a test exercising the wrong
-scenario, an untested code path, a cache resilience gap with multiplied
-blocking calls in degraded mode, indistinguishable log levels for planned
-vs. unplanned fallback, and an encapsulation concern that matched what a
-human reviewer independently raised. Sonnet's strength is thorough
-systematic checking when given good context.
-
-**Opus (for precondition tracing)**: In pressure testing, Opus went deeper
-on upstream analysis — tracing whether a transformer could strip metadata
-before a downstream adapter consumed it, a precondition concern Sonnet
-missed. Use Opus when the diff has subtle upstream/downstream implications
-requiring chains of callers traced across files. Also stronger for
-domain-level semantic reasoning (e.g., "does this return value mean absent
-or empty?"). But Opus is slower, more expensive, and on one test PR its
-output truncated — reliability matters for a review pipeline.
-
-**Judge model**: Sonnet. The judge's task is verification against concrete
-evidence, not creative analysis.
-
-**Recommended defaults**:
-- Most diffs: Sonnet reviewer + Sonnet judge
-- Diffs with subtle precondition chains or domain semantics: Opus reviewer
-- When in doubt: Sonnet. Context quality (Phase 0) matters more than model.
-  A well-briefed Sonnet outperforms a context-starved Opus.
+- **Reviewer**: Sonnet by default. Use Opus when the diff's risk lies in
+  caller chains across files or in domain semantics (empty vs. absent).
+- **Judge**: Opus. The required searches trace past the diff into callers,
+  libraries, and live config; Sonnet judges skip them and disagree with each
+  other on the same findings.
+- Context quality (Phase 0) matters more than model choice.
 
 ## Anti-Patterns
 
@@ -312,3 +323,21 @@ evidence, not creative analysis.
 - Ignoring confirmed findings
 - Coordinator inventing findings the reviewer didn't surface
 - Presenting unverified API suggestions ("use method X" without confirming X exists)
+- Treating a confirmed mechanism as a confirmed finding
+- Severity or wording stronger than the VERIFIED claims
+- Changing a verdict on re-check without new evidence
+- A re-check that rewrites the review instead of listing changes
+
+## Red Flags
+
+Any of these in a judge's ledger or the coordinator's output means a claim
+needs its citation found or its status set to UNCHECKED:
+
+- "I verified this myself", where only the mechanism was checked
+- "Follows from the mechanism" or "structural consequence" as a citation
+- "Permanently", "for up to N days", "can't be carried out", "the only
+  guard", or "no recovery" without the code that sets the bound
+- A severity identical to the reviewer's proposal, with no reason given
+- A mitigation found in the PR's docs, and the finding's severity unchanged
+- UNCHECKED with no searches listed, or "not verified" in place of reading
+  the code that would settle it
