@@ -250,6 +250,13 @@ change that compiles in your head but hasn't been built is not done.
 If you cannot verify the build passes, do NOT claim the work is done. State what
 verification is missing and what the user needs to check.
 
+Keep build and test evidence checkable: capture each command's exit code (e.g.
+`mvn ...; echo "exit=$?"`) and keep its output in a file or show its tail. Output
+piped through `grep` or run with `-q` and no exit code doesn't show success, and
+`ndimiduk:reality-check` won't count it. When a run selects tests (`-Dtest=...`,
+a test filter), keep the test runner's summary (Maven's `Tests run:` lines) so
+the output shows the selected tests ran.
+
 ## OSS Projects
 
 Use the `oss-project-setup` skill when setting up agent permissions or git remotes for any OSS
