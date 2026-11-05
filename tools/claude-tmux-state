@@ -1,0 +1,37 @@
+#!/bin/sh
+# Records Claude Code's state on the enclosing tmux window as @cc, so the window
+# list can show which sessions are working, finished, or blocked on the user.
+# Invoked from Claude Code hooks; must never fail or slow the hook chain.
+
+[ -n "$TMUX_PANE" ] || exit 0
+
+watched() {
+  [ "$(tmux display -p -t "$TMUX_PANE" '#{&&:#{window_active},#{session_attached}}' 2>/dev/null)" = 1 ]
+}
+
+mark() {
+  if watched; then
+    tmux set -wu -t "$TMUX_PANE" @cc 2>/dev/null
+  else
+    tmux set -w -t "$TMUX_PANE" @cc "$1" 2>/dev/null
+  fi
+}
+
+case "$1" in
+  # Not "run": some hook managers treat the word after a "run" token as one of
+  # their own hook names when deciding which settings.json entries they own.
+  busy)
+    tmux set -w -t "$TMUX_PANE" @cc run 2>/dev/null ;;
+  done)
+    mark done ;;
+  notify)
+    # idle_prompt fires ~60s after Stop; re-marking would resurrect a window the
+    # user already looked at.
+    case "$(cat)" in
+      *idle_prompt*) ;;
+      *) mark wait ;;
+    esac ;;
+  clear)
+    tmux set -wu -t "$TMUX_PANE" @cc 2>/dev/null ;;
+esac
+exit 0

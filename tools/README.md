@@ -84,7 +84,50 @@ set -g status-right-length 60
 set -g status-interval 60
 ```
 
+## claude-tmux-state
+
+Per-window Claude Code state for the tmux window list. Claude Code hooks record
+the state as the `@cc` window option; the window formats render it as one
+character in place of the `:` between index and name, so it costs no width.
+
+| Glyph | State |
+|-------|-------|
+| `?` | blocked on you (permission prompt) |
+| `●` | turn finished, not yet seen |
+| `○` | working |
+| `:` | idle, or seen |
+
+Visiting a window clears `?` and `●`. A turn that finishes in the window you are
+looking at leaves no mark. Plain `sh` rather than Python because it runs on every
+tool call (~28ms, almost all tmux round-trip).
+
+The working-state argument is `busy`, not `run`: some hook managers that also
+write settings.json take the word after a `run` token as one of their own hook
+names when deciding which entries they own.
+
+### Install
+
+Add hook groups to `~/.claude/settings.json`, alongside any existing ones:
+
+```json
+"hooks": {
+  "Notification":     [{ "hooks": [{ "type": "command", "timeout": 5, "command": "/path/to/cc-loadout/tools/claude-tmux-state notify" }] }],
+  "PostToolUse":      [{ "matcher": "*", "hooks": [{ "type": "command", "timeout": 5, "command": "/path/to/cc-loadout/tools/claude-tmux-state busy" }] }],
+  "SessionEnd":       [{ "hooks": [{ "type": "command", "timeout": 5, "command": "/path/to/cc-loadout/tools/claude-tmux-state clear" }] }],
+  "Stop":             [{ "hooks": [{ "type": "command", "timeout": 5, "command": "/path/to/cc-loadout/tools/claude-tmux-state done" }] }],
+  "UserPromptSubmit": [{ "hooks": [{ "type": "command", "timeout": 5, "command": "/path/to/cc-loadout/tools/claude-tmux-state busy" }] }]
+}
+```
+
+Then in `~/.tmux.conf`:
+
+```tmux
+setw -g window-status-format '#I#{?#{==:#{@cc},wait},#[fg=red bold]?#[default],#{?#{==:#{@cc},done},#[fg=yellow bold]●#[default],#{?#{==:#{@cc},run},#[fg=colour244]○#[default],:}}}#W#{?window_flags,#{window_flags}, }'
+setw -g window-status-current-format '#I#{?#{==:#{@cc},wait},?,#{?#{==:#{@cc},done},●,#{?#{==:#{@cc},run},○,:}}}#W#{?window_flags,#{window_flags}, }'
+set-hook -g session-window-changed 'if -F "#{||:#{==:#{@cc},wait},#{==:#{@cc},done}}" "set -wu @cc"'
+```
+
 ## Requirements
 
-- Python 3.10+
+- Python 3.10+ (claude-tmux-state: POSIX `sh` and tmux)
 - No third-party dependencies
