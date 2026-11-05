@@ -23,11 +23,12 @@ shows it), never with the worktree as the current directory:
    `CHECKPOINT.md` is listed, show it and ask, since removal deletes ignored
    files too. Then `git worktree remove <worktree>`; never `--force`.
 3. **Update the base.** `git fetch --prune origin`. If the main checkout is on
-   the base or the merged branch with a clean tree, `git switch <base> && git
-   pull --ff-only`; otherwise leave it, since another session may be using it.
-4. **Delete the branch:** `git branch -d <branch>`. If it refuses as not fully
-   merged (a squash or rebase merge does this) and step 1 passed, use
-   `git branch -D <branch>`. With no PR, or if the branch is still checked out,
-   stop and tell the user.
+   the base or the merged branch and `git status --porcelain
+   --untracked-files=no` is empty, `git switch <base> && git pull --ff-only`;
+   otherwise leave it, since another session may be using it.
+4. **Delete the branch:** `git branch -d <branch>`. If it refuses because the
+   branch is not fully merged (a squash or rebase merge does this) and step 1
+   passed, use `git branch -D <branch>`. Any other refusal, including any
+   refusal when there was no PR, means stop and tell the user.
 
 Don't push or change remote state. If the remote branch still exists, mention it.
