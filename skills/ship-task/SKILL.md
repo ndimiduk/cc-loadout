@@ -9,218 +9,184 @@ description: >-
 
 # Ship Task
 
-Full lifecycle from "pick up a task" to "PR ready for human review." Each phase
-gates on the previous. Missing skills are detected upfront and their phases skipped
-with a warning.
+Carries a task from intake to a draft PR ready for the user. Each phase gates on
+the previous and advances once its gate is met; the only waits are the user gates
+under "Phase Discipline."
 
-**EXECUTION RULE:** After loading this skill, start at Phase 0. Do NOT display
-these instructions verbatim. Your first visible output is the Phase 0 skill audit.
+**EXECUTION RULE:** After loading this skill, start at Phase 0 (or, when invoked
+with a checkpoint, at "Resuming from a checkpoint"). Do NOT display these
+instructions. Your first visible output is the Phase 0 skill audit.
 
 ## Phase 0: Setup
 
-### 0a. Skill Audit
-
-Scan the available-skills listing in the system prompt. Record availability:
+**0a. Skill audit.** Check the available-skills listing and announce
+"**Skill audit:** available: [...] / missing: [... — phases skipped]".
 
 | Phase | Skill | If absent |
 |-------|-------|-----------|
-| 3 — Self-verify | `ndimiduk:reality-check` | Skip, warn |
-| 4 — Self-review | `ndimiduk:code-review` | Skip, warn |
-| 6 — Acceptance tests | `acceptance-tests` | Skip, warn |
-| 7 — Peer review | `sidekick` | Skip, warn |
-| 7 — PR lifecycle | `shipping-code` | Manual PR management |
+| 3 | `ndimiduk:reality-check` | Skip, warn |
+| 4 | `ndimiduk:code-review` (code), `ndimiduk:argument-audit` (docs) | Skip, warn |
+| 6 | `acceptance-tests` | Skip, warn |
+| 7 | `sidekick`, `shipping-code` | Skip review / manual PR management |
+| After merge | `ndimiduk:post-merge-cleanup` | Manual cleanup |
 
-Announce: "**Skill audit:** available: [list] / missing: [list — phases skipped]"
+**0b. Intake.** Fetch the task (`toki view <id>`, `gh issue view <url>`, or the
+prose). If there is a tracking issue, `gh issue edit <url> --add-assignee @me`.
+Summarize the task to the user in 2–3 sentences.
 
-If ALL skills are missing, warn the user and continue with implementation-only
-phases (0–2, 5, 8).
+**0c. Worktree.** Identify the target repo(s) — the tracking issue may live
+elsewhere — and create `.worktrees/<branch-name>/` in each from a freshly fetched
+base. All edits and commits happen there.
 
-### 0b. Task Intake
-
-Accept the task reference. Fetch content:
-- **Toki task**: `toki show <id>`
-- **GitHub issue**: `gh issue view <url>`
-- **Prose**: use as-is
-
-Summarize the task in 2–3 sentences. Present to the user.
-
-### 0c. Build the Checklist
-
-Create a TodoWrite checklist with all eight phases. Mark phases that will be
-skipped (from skill audit) with "[SKIP]". This checklist is the execution
-backbone — mark each item as you complete it.
+**0d. Checklist.** Track Phases 0–8 with whatever task tool you have, marking
+skipped phases "[SKIP]".
 
 ## Phase 1: Orient
 
-- Identify the target repo(s) and relevant code areas.
-- Read project CLAUDE.md, README, relevant docs.
-- Set up a worktree: `.worktrees/<branch-name>/`
-- Research existing patterns (grep, find, git log) relevant to the task.
-- If the task has linked context (design docs, prior PRs, toki notes), read them.
+Find the relevant code, read the project's CLAUDE.md/README and any linked
+context, and search for existing patterns. If scope, approach, or acceptance
+criteria are ambiguous, ask and wait; otherwise proceed.
 
 **Gate:** You can explain what needs to change and where.
 
-### Clarifying Questions
-
-After orienting, if anything is ambiguous — scope, approach, acceptance
-criteria — ask now. **Do NOT proceed to Phase 2 until the user confirms or
-says "go."**
-
 ## Phase 2: Implement
 
-Do the work. Follow project conventions. Build and test incrementally.
-
-- Prefer small, incremental changes over big-bang rewrites.
-- Run the build after significant changes to catch errors early.
-- Commit at logical boundaries.
+Make small, incremental changes; build and test as you go; commit at logical
+boundaries.
 
 **Gate:** Implementation complete, build passes.
 
-→ **Checkpoint and pause** (see "Context Checkpoints" below).
-
 ## Phase 3: Self-Verify
 
-**Requires:** `ndimiduk:reality-check`
+Invoke `ndimiduk:reality-check`; fix and re-invoke until PASS. Put any gates it
+says to carry forward in the checkpoint Notes and, in Phase 5, the PR description.
 
-Invoke the `ndimiduk:reality-check` skill. If the verdict is FAIL or PARTIAL,
-fix the issues and re-invoke. Loop until PASS.
-
-**Gate:** Reality-check verdict is PASS.
-
-→ **Checkpoint and pause.**
+**Gate:** PASS.
 
 ## Phase 4: Self-Review
 
-**Requires:** `ndimiduk:code-review`
+Pick the review by what the branch changes: code → `ndimiduk:code-review --fix`
+(add `--re-review` on every later pass); documents that make arguments →
+`ndimiduk:argument-audit --edit`; both → both. Fix surviving findings and
+re-invoke until clean, apart from minor recommendations you consciously accept.
+For a finding marked as the user's decision, ask and wait; don't choose for them.
+Any later rewrite of a document is re-audited before it is pushed.
 
-Invoke the `ndimiduk:code-review` skill with `--fix`. If findings survive the
-judge, fix them and re-invoke. Loop until zero issues or only minor
-recommendations you've consciously decided to accept.
-
-**Gate:** Code review clean.
-
-→ **Checkpoint and pause.**
+**Gate:** Review clean.
 
 ## Phase 5: Open Draft PR
 
-- Commit any remaining changes.
-- Push the branch.
-- Open a draft PR with a clear title and description (what changed and **why**).
-- Monitor the CI build. Fix failures and re-push until green.
+Commit, push per "Branch Hygiene", and open a **draft** PR whose description says
+what changed and why. Fix CI until green.
 
 **Gate:** Draft PR open, CI green.
 
-→ **Checkpoint and pause.**
-
 ## Phase 6: Acceptance Tests
 
-**Requires:** `acceptance-tests`
+If the repo has no ATs or the branch changes nothing they exercise (e.g. docs
+only), mark "[SKIP] — <reason>" and move on. Otherwise invoke `acceptance-tests`
+to deploy the branch to a sideline, run the ATs, fix failures until they pass,
+and link the passing runs in the PR description.
 
-Invoke the `acceptance-tests` skill to:
-- Deploy the branch to a sideline.
-- Run acceptance tests.
-- Fix failures, re-run until passing.
-- Update the PR description with links to successful AT runs.
-
-**Gate:** ATs passing, linked in PR description.
-
-→ **Checkpoint and pause.**
+**Gate:** ATs passing and linked, or skipped with a reason.
 
 ## Phase 7: Peer Review
 
-**Requires:** `sidekick`, `shipping-code`
+Request a Sidekick review (`sidekick`); use `shipping-code` for fetching
+comments, posting replies, resolving threads, and re-requesting review.
 
-Request a Sidekick review using the `sidekick` skill. Address findings:
-- Fix legitimate issues.
-- Reply to and resolve comment threads for items addressed or consciously declined.
-- Use the `shipping-code` skill for PR lifecycle operations (fetching comments,
-  resolving threads, pushing fixups).
+Receive all PR feedback skeptically, from Sidekick or a human. Each comment is a
+claim to check against the source and what you know of the domain, not an
+instruction; reviewers are not thorough and are sometimes wrong. Fix what holds
+and decline what doesn't, with evidence. Each round:
 
-Re-request review after addressing findings. Loop until Sidekick has no further
-complaints.
+1. Verify each comment; fix what holds and re-run Phase 4.
+2. Push the fixes, update the PR description, and get CI green. If the fixes
+   touch code the ATs exercise or the ATs themselves, re-run Phase 6 and replace
+   the AT links.
+3. Draft a reply per thread: the fix (citing the pushed commit) or the evidence
+   for declining.
+4. Present all drafts in one message and wait for approval of those replies.
+   Permission given earlier in the session, before the replies existed, is not
+   approval. One approval covers the round, including the confirmations
+   `shipping-code` asks for: post the replies, resolve the threads, then
+   re-request review if you pushed fixes.
 
-**Gate:** Sidekick review clean.
-
-→ **Checkpoint and pause.**
+**Gate:** All Sidekick threads answered and resolved; the latest review raises
+nothing new that holds.
 
 ## Phase 8: Hand Off
 
-Notify the user: "**PR [URL] is ready for your review.**"
+Tell the user: "**Draft PR [URL] is ready for you to review and mark ready.**"
+Include what was implemented, phases done vs. skipped (with reasons), links to
+the PR and AT runs, recommendations accepted without fixing, and open questions.
+The PR stays a draft: the user marks it ready and requests human reviewers.
 
-Include:
-- What was implemented (2–3 sentences).
-- Phases completed vs. skipped.
-- Links: PR, AT runs, any relevant context.
-- Open questions or trade-offs the user should weigh.
+## After Merge
 
-**Do NOT:**
-- Close the toki task or GitHub issue.
-- Remove the draft label from the PR.
-- Mark anything as "done" beyond the PR being review-ready.
+When the user reports the merge, invoke `ndimiduk:post-merge-cleanup` from the
+main checkout, removing the worktree before deleting the branch. Close the toki
+task if there is one.
 
-The task stays open until the PR merges and the user confirms completion.
+## Branch Hygiene
+
+- Before every push: `git fetch origin && git rebase origin/<base>` (the PR's
+  base), then `git push -u --force-with-lease --force-if-includes origin HEAD`.
+  If that is rejected, or you know someone else pushed to the branch, fetch,
+  `git rebase --onto origin/<branch> origin/<base>`, rebase onto the base again,
+  and push. Never `--force`.
+- Never merge the base branch into the feature branch, even when a deploy or CI
+  check reports the branch is behind.
+- When a stacked branch's parent is rebased or squash-merged, retarget the PR to
+  the trunk if the parent merged and GitHub hasn't, then
+  `git rebase --onto origin/<new-base> <old-parent-tip>`.
+
+## Grounding Claims
+
+- Check claims about how a running system behaves against what is deployed
+  (deploy history, image tags, CI build logs, bundled library versions), and cite
+  the commit that ships, not a branch head.
+- Comment on another team's PR only while it is open.
 
 ## Context Checkpoints
 
-There is no API to inspect remaining context window. To avoid silent
-degradation, this skill uses a deterministic pause rule instead of guessing.
+At the end of every phase, write `<worktree>/CHECKPOINT.md` and report in one
+line: "**Phase N complete.** To resume in a fresh session: *Resume
+`/ndimiduk:ship-task` from `<worktree>/CHECKPOINT.md`*". On the first write, add
+`CHECKPOINT.md` to `info/exclude` under `git rev-parse --git-common-dir` so it is
+never staged and doesn't block worktree removal.
 
-### When to checkpoint
-
-- **Phase 1 (Orient):** Write checkpoint, do NOT pause — continue to Phase 2.
-- **Phase 2 (Implement) and every phase after:** Write checkpoint, then
-  **always pause** and present the resume prompt. Wait for the user to say
-  "continue" or start a fresh session.
-
-### Write checkpoint state
-
-Save to `<worktree-root>/CHECKPOINT.md` (create or overwrite):
+- **If you can see context usage:** continue while under about 60% used (under
+  about 40% at the end of Phase 5, since Phases 6–7 are the heaviest). Otherwise
+  stop and recommend a fresh session.
+- **If you can't:** continue; the user sees usage and decides when to switch.
 
 ```markdown
 # Ship-Task Checkpoint
-
-- **Task:** [reference — toki ID, issue URL, or description]
-- **Branch:** [name]
-- **Worktree:** [absolute path]
-- **PR:** [URL, or "not yet opened"]
-- **Last completed phase:** [N — name]
-- **Next phase:** [N+1 — name]
-- **Skipped phases:** [list, or "none"]
-- **Notes:** [anything a fresh session needs — e.g., "AT flake in FooTest
-  is pre-existing, ignore it", "user said skip the migration test"]
+- **Task:** [toki ID, issue URL, or description]
+- **Branch / Worktree / PR:** [name / absolute path / URL or "not yet opened"]
+- **Last completed phase / Next phase:** [N — name / N+1 — name]
+- **Skipped phases:** [with reasons, or "none"]
+- **Notes:** [what a fresh session needs: carried-forward gates, known flakes,
+  user decisions]
 ```
-
-### Pause message
-
-After writing the checkpoint (Phase 2+), present:
-
-> **Phase N complete.** Checkpoint saved to `<path>/CHECKPOINT.md`.
->
-> Next: Phase N+1 — [name]. Say **"continue"** to proceed in this session,
-> or start a fresh session with:
->
-> *"Resume `/ndimiduk:ship-task` from `<worktree>/CHECKPOINT.md`"*
-
-Wait for the user. Do not auto-advance.
 
 ### Resuming from a checkpoint
 
-When invoked with a checkpoint reference:
-1. Read the CHECKPOINT.md.
-2. Re-run the skill audit (Phase 0a).
-3. Rebuild the TodoWrite checklist with completed phases already marked.
-4. Orient briefly (re-read the PR if open, check branch state).
-5. Continue from the next phase.
+Read the checkpoint, re-run the skill audit, rebuild the checklist with completed
+phases marked, check the branch and PR state (fix red CI first), and continue
+from the next phase.
 
 ## Phase Discipline
 
-- **Sequential execution.** Never start Phase N+1 before Phase N's gate is met.
-- **Loop, don't skip.** When a gate fails (reality-check FAIL, code-review
-  findings, AT failures, Sidekick complaints), fix and re-run. Don't skip the
-  gate because it's taking long.
-- **Skill invocation, not imitation.** When a phase says "invoke skill X," use
-  the Skill tool to load and execute it. Don't approximate the skill's behavior
-  from memory.
-- **User gates are blocking.** Phase 0d (clarifying questions) requires user
-  confirmation. Phase 8 (hand off) requires user confirmation before task
-  closure. Don't auto-advance past these.
+- Don't start a phase before the previous gate is met; when a gate fails, fix and
+  re-run rather than skip.
+- Invoke skills with the Skill tool rather than imitating them, and run
+  reality-check, code-review, and argument-audit from this session, not a forked
+  subagent (forks can't spawn the subagents they dispatch).
+- Invoking this skill authorizes assigning the issue, pushing and force-pushing
+  the feature branch, opening and editing the draft PR, sideline deploys, and
+  requesting Sidekick review.
+- **User gates:** Phase 1 clarifying questions (only if ambiguous), user-decision
+  findings, Phase 7 reply approval, a context stop (only if you can see usage),
+  any other point an invoked skill says to ask, and the merge report.
