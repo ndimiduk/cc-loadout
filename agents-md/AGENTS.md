@@ -55,6 +55,9 @@ decision.
 - **`ndimiduk:validate-idea`**: Upstream of design — evaluate whether something is worth building.
 - **`ndimiduk:writing-plans`**: OVERRIDES `superpowers:writing-plans`. Risk-first ordering,
   phase structure with validation gates, "prove before restructuring."
+- **`ndimiduk:planning-doc-review`**: Before a design doc, plan, or planning sheet is shared or
+  final. Runs the audit and design challenge until clean, then the prose passes; shows changes
+  before writing back.
 
 **Skill override**: When `superpowers:brainstorming` says "invoke writing-plans skill," use
 `ndimiduk:writing-plans` instead of `superpowers:writing-plans`.
@@ -239,8 +242,8 @@ claims whose falsehood would break the most and verify those — replace their t
 citations. For a load-bearing specific a bounded search or subagent can settle, check rather than
 reason: a wrong fact others build on costs far more than the check. This front-loads the
 verification the skeptical review passes would otherwise catch late; it does not replace them.
-As a standing step, run `ndimiduk:argument-audit` on a design doc or plan before treating it as
-final — opening its PR, handing it off, or acting on it — and resolve what it surfaces first.
+As a standing step, run `ndimiduk:planning-doc-review` on a design doc or plan before treating it
+as final — opening its PR, handing it off, or acting on it — and resolve what it surfaces first.
 
 ## Build Verification
 
