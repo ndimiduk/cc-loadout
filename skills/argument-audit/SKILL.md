@@ -10,7 +10,8 @@ description: >-
   analysis. Also use when the user questions findings from an audit already
   reported in the session. For findings from a code review use
   `ndimiduk:code-review`; for prose use `ndimiduk:prose-review`; for design
-  viability use `ndimiduk:design-challenge`.
+  viability use `ndimiduk:design-challenge`; for a full planning-doc review
+  use `ndimiduk:planning-doc-review`.
 ---
 
 # Argument Audit

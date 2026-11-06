@@ -25,7 +25,7 @@ instructions. Your first visible output is the Phase 0 skill audit.
 | Phase | Skill | If absent |
 |-------|-------|-----------|
 | 3 | `ndimiduk:reality-check` | Skip, warn |
-| 4 | `ndimiduk:code-review` (code), `ndimiduk:argument-audit` (docs) | Skip, warn |
+| 4 | `ndimiduk:code-review` (code), `ndimiduk:planning-doc-review` (docs) | Skip, warn |
 | 6 | `acceptance-tests` | Skip, warn |
 | 7 | `sidekick`, `shipping-code` | Skip review / manual PR management |
 | After merge | `ndimiduk:post-merge-cleanup` | Manual cleanup |
@@ -66,8 +66,8 @@ says to carry forward in the checkpoint Notes and, in Phase 5, the PR descriptio
 ## Phase 4: Self-Review
 
 Pick the review by what the branch changes: code → `ndimiduk:code-review --fix`
-(add `--re-review` on every later pass); documents that make arguments →
-`ndimiduk:argument-audit --edit`; both → both. Fix surviving findings and
+(add `--re-review` on every later pass); planning docs and other documents that
+make arguments → `ndimiduk:planning-doc-review`; both → both. Fix surviving findings and
 re-invoke until clean, apart from minor recommendations you consciously accept.
 For a finding marked as the user's decision, ask and wait; don't choose for them.
 Any later rewrite of a document is re-audited before it is pushed.
@@ -187,8 +187,8 @@ from the next phase.
 - Don't start a phase before the previous gate is met; when a gate fails, fix and
   re-run rather than skip.
 - Invoke skills with the Skill tool rather than imitating them, and run
-  reality-check, code-review, and argument-audit from this session, not a forked
-  subagent (forks can't spawn the subagents they dispatch).
+  reality-check, code-review, and planning-doc-review from this session, not a
+  forked subagent (forks can't spawn the subagents they dispatch).
 - Invoking this skill authorizes assigning the issue, pushing and force-pushing
   the feature branch, opening and editing the draft PR, sideline deploys,
   requesting Sidekick review, and replying to and resolving review threads on
