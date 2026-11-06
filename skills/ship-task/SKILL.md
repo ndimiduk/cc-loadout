@@ -108,12 +108,14 @@ instruction; reviewers are not thorough and are sometimes wrong. Each round:
      escalated comment with your recommendation.
    - **Handle** everything else: fix what holds, or decline it with evidence.
 2. Re-run Phase 4 on the fixes. Push, update the PR description, and get CI
-   green. If the fixes touch code the ATs exercise or the ATs themselves, re-run
-   Phase 6 and replace the AT links.
+   green. If the fixes change behavior the ATs exercise, or change the ATs,
+   re-run Phase 6 and replace the AT links; skip it for trivial or
+   non-functional changes (renames, comments, log text, formatting).
 3. Reply to each handled thread, citing the pushed commit or the evidence for
    declining, and resolve it. Don't wait for approval; this replaces
    `shipping-code`'s per-message confirmation.
-4. Re-request review if you pushed fixes.
+4. Re-request review from every reviewer, human or Sidekick, whose comment you
+   answered with a code change.
 
 **Gate:** Every thread answered and resolved, and escalated threads settled with
 the user; the latest review raises nothing new that holds.
