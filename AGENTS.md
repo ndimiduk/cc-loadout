@@ -103,8 +103,8 @@ For full triggers and execution rules, see each skill's own `SKILL.md`.
   milestone doc, OKR or tracker sheet, focus map) wherever it lives: run the fitting
   review skills until clean, then show proposed changes before writing back.
 - **`ndimiduk:session-handoff`** — Prepare a session's work for `/compact` or a fresh
-  session: settle work in flight, route carried-forward state to toki or the vault's
-  session log, then hand the user a compaction argument and a resume prompt.
+  session: settle work in flight, route carried-forward state to the work's tracker or the
+  vault's session log, then hand the user a compaction argument and a resume prompt.
 - **`ndimiduk:research-lint`** — Health check for markdown knowledge bases: tag
   distribution, orphan docs not in README, missing frontmatter. Bundles an executable
   `rklint` Python script alongside the SKILL.md; symlinked into `$PATH`

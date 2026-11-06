@@ -307,8 +307,10 @@ worktrees to keep unrelated changes isolated.
 
 ## Session and Task Management
 
-Use `toki` for all persistent work tracking. Prefer filing tasks over doing work immediately.
-See the `ndimiduk:toki` skill (from `~/repos/toki/cmd/toki/skill/`) for CLI conventions
+`toki` is a local, private tracker: use it for your own work and for work no shared tracker
+covers. Work a team tracks (GitHub issues, project docs) stays in that tracker; don't mirror it
+into toki. In either case, prefer filing a task over doing the work immediately. See the
+`ndimiduk:toki` skill (from `~/repos/toki/cmd/toki/skill/`) for CLI conventions
 and workflow details.
 
 ## Tagging Convention

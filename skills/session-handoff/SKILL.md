@@ -14,8 +14,10 @@ user gets two short texts to paste.
    as unpushed. Note what is uncommitted and where. If ship-task is running,
    write its checkpoint and name its path in both texts.
 2. **Route what you'd carry forward:**
-   - Task state, next steps, and follow-ups go to the toki task's notes, or
-     to new toki tasks.
+   - Task state, next steps, and follow-ups go where the work is already
+     tracked: its GitHub issue or project doc for shared work, its toki task
+     for private work. If nothing tracks it, they go in the session log's open
+     section; file a new tracker entry only if the user asks.
    - Improvements to a skill, including corrections to how it behaves, go to
      the open toki task collecting that skill's improvements; file one if none
      is open.
@@ -34,7 +36,7 @@ user gets two short texts to paste.
      issue URLs, worktree paths and branches, the current step, files not to
      commit, the log's path, and the skills to re-invoke.
    - A resume prompt for a fresh session: read the log (name the section)
-     and `toki view <id>`; re-invoke the skills the work needs, because
+     and the work's tracker entry; re-invoke the skills the work needs, because
      compaction truncates loaded skill text; check the branch, PR, and CI
      state; continue from the named step.
 
