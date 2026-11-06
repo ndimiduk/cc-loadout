@@ -99,6 +99,9 @@ For full triggers and execution rules, see each skill's own `SKILL.md`.
 - **`ndimiduk:writing-plans`** — Create phased, risk-ordered implementation plans
   with validation gates from a spec. **Overrides `superpowers:writing-plans`** — adds
   risk-first task ordering, phase structure, and prove-before-restructure discipline.
+- **`ndimiduk:session-handoff`** — Prepare a session's work for `/compact` or a fresh
+  session: settle work in flight, route carried-forward state to toki or the vault's
+  session log, then hand the user a compaction argument and a resume prompt.
 - **`ndimiduk:research-lint`** — Health check for markdown knowledge bases: tag
   distribution, orphan docs not in README, missing frontmatter. Bundles an executable
   `rklint` Python script alongside the SKILL.md; symlinked into `$PATH`
