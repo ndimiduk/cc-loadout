@@ -1,6 +1,6 @@
 ---
 name: ndimiduk-document-discipline
-description: Use whenever writing or revising prose that other people will read in a file or tracker — research and design docs, README/markdown, issue and PR bodies, commit messages, review notes, code comments, changelogs. Keeps the artifact standalone and free of revision residue — no self-correction narration, no warnings against framings the text no longer contains, no meta-commentary about your own editing process, and a neutral register that describes the work rather than selling it. Triggers on drafting or editing any prose-bearing file, and especially on any multi-pass revision where an earlier draft could leak into the final text. If the `writing-clearly-and-concisely` skill is available, load and use it too.
+description: Use whenever writing or revising prose that other people will read in a file or tracker — research and design docs, README/markdown, issue and PR bodies, PR review comments and thread replies, commit messages, review notes, code comments, changelogs. Load it before posting any comment, not only when editing a document. Keeps the artifact standalone and free of revision residue — no self-correction narration, no warnings against framings the text no longer contains, no meta-commentary about your own editing process, and a neutral register that describes the work rather than selling it. Triggers on drafting or editing any prose-bearing file, and especially on any multi-pass revision where an earlier draft could leak into the final text. If the `writing-clearly-and-concisely` skill is available, load and use it too.
 ---
 
 # Document Discipline
@@ -10,8 +10,11 @@ durable written artifacts.
 
 A document is a standalone artifact for a fresh reader with no access to its edit
 history, the conversation that produced it, or any earlier draft. Every sentence
-must earn its place for that reader. Keep revision reasoning and arguments with
-earlier drafts in your thinking or in chat — never in the artifact.
+must earn its place for that reader. Cut requirements nothing depends on,
+standard boilerplate, exceptions that "every X" already covers, and specs
+restated elsewhere; state each once, where it belongs, and link to it. Keep
+revision reasoning and arguments with earlier drafts in your thinking or in
+chat — never in the artifact.
 
 ## Delete these when you see them
 
@@ -58,6 +61,27 @@ Description informs that reader; ornamentation asks them to be impressed and rea
 as spin. This is not a mandate for flat, lifeless prose — a vivid, exact verb is not
 hyperbole. Cut the framing that flatters the design; keep the words that carry
 information.
+
+## Prefer magnitudes to volatile counts
+
+Counts taken from a live system drift after the doc is written. State the
+magnitude: "a few hundred persisted topics", "several snapshots per hour", "about
+ten connectors per region", not "312 topics" or "13 connectors". Keep exact values
+where the constant is the point: config values, limits, a denominator an
+observation is measured against, dates, SHAs, and line citations.
+
+## Writing on the user's behalf
+
+PR review comments, thread replies, and issue comments go out as the user, to
+colleagues. Write each as the user would:
+
+- On someone else's PR or issue, state the problem and its evidence; leave the
+  solution to its author unless the user asks for one.
+- Do the checking yourself; don't ask anyone to justify or investigate what you
+  could verify. If you can't check it, raise it with the user.
+- Speak as the user, not as a "we" that holds preferences.
+- Leave out the discussion that produced the comment, and any evaluation of the
+  author or their work ("both halves are worth landing").
 
 ## Reference other repos by full URL
 
