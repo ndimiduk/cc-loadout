@@ -6,7 +6,8 @@ description: >-
   "review the diff", or before merging. Also use when the user questions
   findings from a code review already reported in the session: "are you
   sure", "pressure-test the findings", "double-check those", "is that real".
-  Flags: --comment, --fix, --re-review. For prose use
+  Also use to re-review a PR already reviewed: "take another look", "check
+  the latest", "any updates?". Flags: --comment, --fix, --re-review. For prose use
   `ndimiduk:prose-review`; for documents and designs use
   `ndimiduk:argument-audit` or `ndimiduk:design-challenge`.
 ---
@@ -18,11 +19,15 @@ access finds issues, a judge agent tries to refute each one, and the
 coordinator reports what survives with citations. Questions about reported
 findings go through the Re-check Protocol.
 
+Every review runs the reviewer and the judge as separate agents, whatever the
+diff size. The coordinator never substitutes its own read for either.
+
 ## Flags
 
-- `--comment` — post findings as inline PR comments via `gh`
+- `--comment` — after the user picks findings, post them (see "Posting")
 - `--fix` — apply fixes to working tree after review
-- `--re-review` — focus on changes since last review; don't re-raise resolved issues
+- `--re-review` — review only what changed since the last reviewed commit (see
+  "Re-review")
 
 ## Process
 
@@ -36,39 +41,44 @@ review grounded rather than vibes-based. Inject all of it into the reviewer prom
 1. **Project instructions**: `CLAUDE.md`, `REVIEWING.md`, `CONTRIBUTING.md`,
    `.github/CODEOWNERS` — read from repo root and from directories touched by
    the diff.
-2. **Diff scope**: `git diff --stat {BASE}..{HEAD}`.
+2. **Diff scope**: `git diff --stat {BASE}..{HEAD}`, where BASE is the
+   merge-base of HEAD and the PR's base branch.
 3. **Full diff**: `git diff {BASE}..{HEAD}`. For large diffs (>1000 lines
    changed), provide a file list instead. Instruct reviewers and judges to
    read per-file diffs, never print the full diff, and write findings to a
    file as they go so a context overflow doesn't lose the work.
+4. **For a PR**: its description and conversation (`gh pr view --comments`
+   and review threads), and the PR head checked out in a worktree. Fetch any
+   other local clone the review will read, and read the ref the PR builds
+   against.
 
 **Gather when available:**
 
-4. **Memex/fieldbook**: If a vault exists (e.g., `~/src/braindump/`), grep for
+5. **Memex/fieldbook**: If a vault exists (e.g., `~/src/braindump/`), grep for
    notes related to the project, libraries, or patterns touched by the diff.
    Prior positions on conventions and architectural patterns are review context.
-5. **Project documentation**: README, architecture docs, ADRs in `docs/` or
+6. **Project documentation**: README, architecture docs, ADRs in `docs/` or
    `design/`.
-6. **Recent git history**: `git log --oneline -20 {BASE}..{HEAD}` for commit
+7. **Recent git history**: `git log --oneline -20 {BASE}..{HEAD}` for commit
    narrative; `git log --oneline -10 -- <changed-files>` for recent history
    on touched files.
 
 **Gather for broader context:**
 
-7. **CI config**: Check `.github/workflows/`, `Makefile`, `pom.xml`,
+8. **CI config**: Check `.github/workflows/`, `Makefile`, `pom.xml`,
    `package.json` to understand what automated checks already run. The reviewer
    must NOT duplicate what CI catches.
-8. **Project conventions**: Style guides, coding standards, linting config. For
+9. **Project conventions**: Style guides, coding standards, linting config. For
    well-known projects, use `WebSearch` to find relevant conventions, recent
    API changes, or known pitfalls — but only when the diff touches areas
    where project-specific knowledge matters.
 
 **Scope the review:**
 
-9. **Eligibility check**: Skip review if the diff is (a) empty, (b) purely
-   mechanical (formatting, dependency bumps with no code changes), or (c) already
-   reviewed this session. If `--re-review`, identify what changed since last
-   review and scope accordingly.
+10. **Eligibility check**: Skip review if the diff is (a) empty, (b) purely
+   mechanical (formatting, dependency bumps with no code changes), or (c)
+   already reviewed at this head commit, with no uncommitted changes or new
+   comments since. Otherwise a reviewed PR gets a re-review.
 
 ### Phase 1: Review
 
@@ -263,8 +273,38 @@ was checked and which project docs were consulted.
 **`--fix` mode**: Apply reported findings that have a concrete fix. Show what
 was applied.
 
-**`--comment` mode**: Post findings as inline PR comments via `gh`. Use full SHA
-in file links. Sign comments with `(~Claude)`. Never post an UNCHECKED claim.
+**Discuss before posting.** On a PR you don't own, present the findings and
+wait; the user decides which, if any, are posted. This holds with `--comment`.
+
+## Posting
+
+After the user picks findings:
+
+1. Refresh the PR and the review worktree. If the head moved or new comments
+   arrived since the review, re-review the delta (below); if that changes a
+   picked finding, report back before posting.
+2. Post with `shipping-code`'s `post-comment` script (`--file`/`--line` for
+   line comments), not its PR workflow, using full SHAs in file links. Never
+   post an UNCHECKED claim.
+3. Write as the user, applying `ndimiduk:document-discipline`: state the
+   problem and its evidence; no "we", no account of how the review ran.
+   Leave the fix to the author unless the user asks to include one. Sign per
+   the user's convention.
+
+## Re-review
+
+For `--re-review` and for "take another look" on a PR already reviewed:
+
+1. Check out the PR head in the review worktree and fetch its comments. Take
+   the last reviewed commit from the ledger, else the commit of the user's
+   last comment on the PR, else run a full review.
+2. Run Phases 1–2 on `git diff <T>` plus the new comments, with the earlier
+   ledger as context. T is the first line of `git merge-tree --write-tree
+   <last-reviewed> <BASE>`: the reviewed state replayed onto the current base,
+   so rebases, base merges, and uncommitted fixes all reduce to the real
+   change. Bot comments go to the judge as claims. Don't re-raise findings
+   already resolved or declined.
+3. Report what's new or changed, and write a ledger at the new head.
 
 ## Re-check Protocol
 
@@ -299,20 +339,11 @@ Hard exclusion list. The judge rejects these even if the reviewer flags them:
 
 - **Precision over recall.** 3 real findings + 0 false positives builds trust.
   3 real + 5 false destroys it. When in doubt, kill the finding.
-- **Scale to diff size.** 5-line fix: 0-2 comments. 500-line feature: full
-  coverage. Don't over-comment small changes.
+- **Scale the comments, not the process, to diff size.** 5-line fix: 0-2
+  comments. 500-line feature: full coverage. Both get the reviewer and judge.
 - **Senior audience.** Skip basic explanations. Be direct, specific, brief.
 - **Project conventions beat generic advice.** "The project dev guide says X"
   is 10× more useful than "best practice suggests X."
-
-## Workflow Integration
-
-**Iterative development**: Review at natural checkpoints. Use `--re-review` for
-subsequent passes.
-
-**Before merge**: Full review. Consider `--comment` for the PR record.
-
-**When stuck**: Review your own changes for a fresh perspective.
 
 ## Model Selection
 
@@ -326,6 +357,9 @@ subsequent passes.
 ## Anti-Patterns
 
 - Skipping review because "it's simple"
+- Skipping the reviewer or judge because the diff is small ("overkill", "I
+  reviewed it myself", "checked the load-bearing claims myself")
+- Answering "take another look" with an ad hoc read instead of a re-review
 - Ignoring confirmed findings
 - Coordinator inventing findings the reviewer didn't surface
 - Presenting unverified API suggestions ("use method X" without confirming X exists)
