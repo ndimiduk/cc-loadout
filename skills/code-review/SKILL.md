@@ -175,8 +175,8 @@ citation, or UNCHECKED. No hedging. A citation is a `file:line`, doc, or
 command output that shows the claim directly. "Follows from the mechanism"
 is an inference, so the claim is UNCHECKED. An UNCHECKED claim records the
 searches that were run and why they were inconclusive. A claim whose required
-search wasn't run is not UNCHECKED; run the search. A claim that depends on an UNCHECKED claim is
-UNCHECKED too.
+search wasn't run is not UNCHECKED; run the search. A claim that depends on
+an UNCHECKED claim is UNCHECKED too.
 
 **Required searches:**
 
