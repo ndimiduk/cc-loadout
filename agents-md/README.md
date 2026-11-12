@@ -52,7 +52,7 @@ Option A. Other agents may not support an include syntax — check your tool's d
 - **System Design Guidance** — pointers to the planning skills in `../skills/`.
 - **Rendering References as Links** — full URLs for PRs/issues, never bare numbers.
 - **Code Conventions** — comment WHY not WHAT, sign agent-authored PR comments.
-- **Tool Usage** — bare command names on PATH, no subshells in Bash invocations.
+- **Tool Usage** — bare command names on PATH.
 - **Git Workflow** — branch naming (no `/`), worktree discipline, no implicit cwd.
 - **Research and Exploration Permissions** — blanket allowance for read-only git, file
   inspection, and scratch-dir work.
@@ -72,6 +72,5 @@ Walk it once and personalize:
   category-vs-identifier rule.
 - The **Session Logs** section assumes a `collaboration/` directory in a notes vault. Adjust
   the path or drop the section if you don't keep one.
-- The **Avoid Subshells** subsection under Tool Usage and the **No `isolation: "worktree"`**
-  bullet under Git Workflow are Claude Code-specific. Drop them if you're installing into a
-  non-Claude agent.
+- The **No `isolation: "worktree"`** bullet under Git Workflow is Claude Code-specific. Drop
+  it if you're installing into a non-Claude agent.

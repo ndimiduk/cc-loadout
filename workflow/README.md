@@ -13,7 +13,7 @@ In rough order of when they come up over the lifecycle of a piece of work:
 2. **`worktrees.md`** — when starting work that needs isolation from your current
    workspace. The `.worktrees/<name>` convention, branch naming, cwd discipline.
 3. **`scratch-dirs.md`** — for everything that shouldn't end up in commits. Per-repo
-   `.scratch/` and per-session `/tmp/claude-*`. Plus the rule against shell subshells.
+   `.scratch/` and per-session `/tmp/claude-*`.
 4. **`subagents.md`** — when the work has independent pieces or a research step that would
    pollute the parent's context. Briefing-style prompts, parallel vs. sequential dispatch.
 5. **`toki.md`** — for the longer arc. Task tracker discipline, tag taxonomy as a bridge

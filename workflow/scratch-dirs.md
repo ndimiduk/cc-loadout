@@ -2,7 +2,7 @@
 
 Two scratch conventions, two different lifetimes. `.scratch/` lives in a repo and
 survives across sessions; `/tmp/claude-*` is per-invocation ephemera. Both exist to keep
-junk out of commits and to dodge security prompts on every shell invocation.
+junk out of commits.
 
 ## Per-repo scratch: `.scratch/`
 
@@ -52,32 +52,6 @@ write to that path; the second clobbers the first. The first session then commit
 the second session's message, or worse, both commit identical messages with mismatched
 diffs.
 
-## Avoid shell subshells: `$()` and backticks
-
-**Rule.** Don't use `$(...)` or backticks in Bash tool invocations. Most agent harnesses
-treat any subshell expansion as a security event and prompt for approval per call. The
-prompt fatigue trains people to click through; that's the failure mode.
-
-**Example.** Instead of:
-
-```sh
-git commit -m "$(cat /tmp/msg.txt)"
-```
-
-write the message to a unique file with the Write tool, then:
-
-```sh
-git commit -F /tmp/claude-a3f7b912-commit-msg.txt
-```
-
-The `-F` (and `--body-file`, `--from-file`, `--input-file`, …) flag exists on every CLI
-that accepts multi-line input. Find it. Use it.
-
-**Anti-pattern.** Embedding multi-line content via `printf` or here-strings inside the
-Bash invocation. It works once, then breaks the moment the content has a quote, a
-backtick, or a `$` in it. Quoting hell is the #1 source of "the agent broke my commit
-message."
-
 ## When to clean up
 
 `.scratch/` — leave it alone unless it's getting cluttered. The whole directory is
@@ -88,5 +62,5 @@ want, batch-delete `/tmp/claude-*` at session end, but don't burn cycles on it.
 
 ## See also
 
-- `agents-md/AGENTS.md` — Avoid Subshells and Scratch Directories sections.
+- `agents-md/AGENTS.md` — scratch dirs under Research and Exploration Permissions.
 - `workflow/subagents.md` — subagents writing to scratch paths the parent will read.

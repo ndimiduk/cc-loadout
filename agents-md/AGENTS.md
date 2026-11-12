@@ -115,20 +115,6 @@ write a comment explaining the WHY. Don't bother explaining WHAT the code is doi
   rule requires it.
 - If unsure, prefer the bare name. Don't preemptively resolve paths with `which`.
 
-### Avoid Subshells in Bash Commands
-
-> Claude Code-specific advice — agents whose Bash tools handle subshells without a
-> security prompt can ignore this section.
-
-- **NEVER** use `$()` or backticks in Bash tool commands — they trigger security prompts.
-- Instead, use the file-write tool to create a temp file, then pass it via a file flag.
-- **Use unique paths** to avoid collisions between parallel sessions:
-  `/tmp/agent-<8-random-hex>-<purpose>.txt` (e.g., `/tmp/agent-a3f7b912-commit-msg.txt`).
-- **git commit**: Write message to temp file, then `git commit -F /tmp/agent-<id>-commit-msg.txt`.
-- **gh pr create**: Write body to temp file, then `gh pr create --body-file /tmp/agent-<id>-pr-body.txt`.
-- **General pattern**: Any time you need multi-line or complex content in a CLI argument, write
-  it to a unique `/tmp/agent-*` file first and use the tool's file-input flag.
-
 ## Git Workflow
 
 - **Branch naming**: NEVER use `/` in branch names — use `-` instead. Example:
