@@ -36,14 +36,13 @@ note, issue body):
 
 1. `ndimiduk:argument-audit --edit` on the whole document; recent edits are
    context, not scope.
-2. `ndimiduk:design-challenge` when the document proposes a design, plan, or
-   decision. Run it against the text, skipping its asks of the user (its
-   sections 0, 1, and 4): take answers from the document and collect the
-   questions it can't answer for the user. A requirements document goes to
-   `ndimiduk:requirements-hardening` instead.
-3. Fix what holds and re-run 1–2 until the audit's judge keeps only user
-   decisions and design-challenge returns READY. Ask the user-decision
-   findings and collected questions when the loop ends.
+2. `ndimiduk:design-challenge` in check mode when the document proposes a
+   design, plan, or decision. Hold its questions for the user until the loop
+   ends. A requirements document goes to `ndimiduk:requirements-hardening`
+   instead.
+3. Fix what holds and re-run 1–2 until the audit's judge and design-challenge
+   raise only user decisions. Ask the user-decision findings and collected
+   questions when the loop ends.
 4. Prose passes: `ndimiduk:document-discipline`, then
    `writing-clearly-and-concisely` if available. If they change a claim,
    re-run step 1.

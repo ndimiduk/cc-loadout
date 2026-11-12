@@ -28,27 +28,41 @@ This replaces generic "interview me relentlessly" with specific dimensions to pr
 
 ## Process
 
-### 0. Establish the User's Position
+### 1. Pick the Mode
 
-Before probing, ask what the user is most worried about and what they're most
-confident in. Their self-assessment reveals where to push hardest — and where
-they've already done the work. Skip this if the user opened with "challenge this
-[specific artifact]" and their concerns are already stated.
+- **Check**: the user hands you a written design, plan, or decision to check
+  (a doc, an edit to one, a proposal already in the conversation). Read it and
+  everything it depends on, probe every dimension against the text and the
+  code, and go straight to Synthesize. Ask nothing first; put decisions only
+  the user can make in the synthesis as a question round.
+- **Interview**: the user wants to be grilled on a design that isn't fully
+  written down. Read what exists (code, docs, history), then probe in rounds.
+  If the design is too vague to probe, ask the user to state it in full.
 
-### 1. Understand the Design
+### 2. Probe in Rounds
 
-If there's a codebase, explore it. Read relevant files, recent commits, existing docs.
-If the user is presenting a design verbally, ask them to state it completely before
-you start challenging.
+Work each dimension below yourself first. Facts are your job: settle them from
+the code, docs, logs, and metrics, or with a research subagent, and don't ask
+permission to look. What remains for the user are decisions and facts only
+they know (goals, targets, ownership, constraints). When you ask for a fact,
+say where you looked.
 
-Restate the design in your own words in 3-5 sentences. Ask: "Is this accurate?"
-Don't proceed until the user confirms you understand what you're evaluating.
+Put those to the user in rounds. A round asks every open question whose
+prerequisites are settled; a question that depends on one still open waits for
+the next round. Open the first round with your restatement of the design in
+3-5 sentences, which the user corrects in their answer. Then each question:
 
-### 2. Probe Dimensions
+```
+**Q1. <title>** <your recommendation, asked as yes/no; then the alternatives>
+Recommend: <why>
+```
 
-Work through these dimensions ONE AT A TIME. For each, ask the hardest question you
-can think of. Provide your recommended answer. Skip dimensions that clearly don't
-apply (e.g., skip "Scaling" for a CLI tool used by one team).
+Word each question so "yes" accepts your recommendation. Include your findings
+so far, so the user answers against them. Leave out questions that block
+nothing ("want me to…?"); offers go in the synthesis as next steps. After each
+answer, recompute what is open and ask the next round. When nothing is open,
+synthesize. Skip dimensions that clearly don't apply (e.g., Scaling for a CLI
+tool used by one team).
 
 #### Requirements Clarity
 
