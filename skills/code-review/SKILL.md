@@ -50,10 +50,11 @@ review grounded rather than vibes-based. Inject all of it into the reviewer prom
    changed), provide a file list instead. Instruct reviewers and judges to
    read per-file diffs, never print the full diff, and write findings to a
    file as they go so a context overflow doesn't lose the work.
-4. **For a PR**: its description and conversation (`gh pr view --comments`
-   and review threads), and the PR head checked out in a worktree. Fetch any
-   other local clone the review will read, and read the ref the PR builds
-   against.
+4. **Intent**: the text of the issue or task the change addresses and, for a
+   PR, its description. **For a PR**, also its conversation (`gh pr view
+   --comments` and review threads), and the PR head checked out in a
+   worktree. Fetch any other local clone the review will read, and read the
+   ref the PR builds against.
 
 **Gather when available:**
 
@@ -102,6 +103,10 @@ large diffs), all project context from Phase 0, and tool access.
   usage, null/undefined hazards, resource leaks, error handling gaps on
   critical paths. Pay close attention to Optional/nullable chaining, lambda
   scoping, and semantic meaning of return values (e.g., empty vs. absent).
+- **Completeness**: Find every place the intent says the change applies,
+  including code the diff doesn't touch: other callers of what it replaces,
+  other entry points to the same behavior. Report each one still left out. A
+  path the change's description or commits defer is not a gap.
 - **Changed behavior**: Deleted code with side effects, changed semantics that
   callers depend on, weakened preconditions, removed error handling. Use
   `git blame` and `grep` to trace callers of changed interfaces.
@@ -139,7 +144,8 @@ or `UNCHECKED`:
   ("permanently", "every run", "30 days") is a separate claim.
 - **Mitigations**: retries, recovery paths, guards, and the PR's own docs or
   comments that address the issue
-- **Novelty**: base-branch behavior for the same trigger
+- **Novelty**: base-branch behavior for the same trigger; for a completeness
+  gap, the intent text that asks for different behavior
 - **Fix**: concrete, or "no obvious fix"
 
 The reviewer does not assign severity; the judge does.
@@ -168,15 +174,15 @@ If Phase 1 returns no findings and there are no outside claims (PR comments
 that assert a defect, or the user's question), skip the judge: it only tests
 claims and may not add new ones. Write an empty ledger and go to Phase 3.
 
-Otherwise dispatch a judge with the full diff, all Phase 1 findings, and the
-outside claims. The judge tries to refute each claim; a confirmed mechanism
-alone does not confirm a finding. Mark each claim VERIFIED or REFUTED with a
-citation, or UNCHECKED. No hedging. A citation is a `file:line`, doc, or
-command output that shows the claim directly. "Follows from the mechanism"
-is an inference, so the claim is UNCHECKED. An UNCHECKED claim records the
-searches that were run and why they were inconclusive. A claim whose required
-search wasn't run is not UNCHECKED; run the search. A claim that depends on
-an UNCHECKED claim is UNCHECKED too.
+Otherwise dispatch a judge with the full diff, the Phase 0 intent, all Phase 1
+findings, and the outside claims. The judge tries to refute each claim; a
+confirmed mechanism alone does not confirm a finding. Mark each claim VERIFIED
+or REFUTED with a citation, or UNCHECKED. No hedging. A citation is a
+`file:line`, doc, or command output that shows the claim directly. "Follows
+from the mechanism" is an inference, so the claim is UNCHECKED. An UNCHECKED
+claim records the searches that were run and why they were inconclusive. A
+claim whose required search wasn't run is not UNCHECKED; run the search. A
+claim that depends on an UNCHECKED claim is UNCHECKED too.
 
 **Required searches:**
 
@@ -189,7 +195,7 @@ an UNCHECKED claim is UNCHECKED too.
 - **Mitigations**: read the PR description, changed docs, and nearby comments.
   If the author addressed the issue, the finding is the gap in that mitigation
   and is rated as that gap.
-- **Novelty**: check the base branch.
+- **Novelty**: check the base branch, or for a completeness gap, the intent.
 - **Fix**: check the suggested fix against the code it touches: visibility
   and package of every member it uses or adds, signatures, callers it would
   break, and whether the change makes the test fail when the bug is present.
@@ -226,7 +232,7 @@ an UNCHECKED claim is UNCHECKED too.
 - Nitpicks a senior engineer wouldn't raise
 - Filler ("great use of X")
 - Duplicates
-- Suggestions on lines the author didn't modify
+- Suggestions on lines the author didn't modify, except completeness gaps
 
 The judge may reword or merge findings but must not invent new ones.
 
@@ -291,8 +297,8 @@ After the user picks findings:
    arrived since the review, re-review the delta (below); if that changes a
    picked finding, report back before posting.
 2. Post with `shipping-code`'s `post-comment` script (`--file`/`--line` for
-   line comments), not its PR workflow, using full SHAs in file links. Never
-   post an UNCHECKED claim.
+   lines in the diff, `--general` for the rest), not its PR workflow, using
+   full SHAs in file links. Never post an UNCHECKED claim.
 3. Write as the user, applying `ndimiduk:document-discipline`: state the
    problem and its evidence; no "we", no account of how the review ran.
    Leave the fix to the author unless the user asks to include one. Sign per
@@ -342,7 +348,7 @@ Hard exclusion list. The judge rejects these even if the reviewer flags them:
 - Renaming or minor style not in project conventions
 - "Consider adding tests" for trivial cases (null checks, guard clauses)
 - Intentional functionality changes evident from PR context
-- Pre-existing issues on unmodified lines
+- Pre-existing issues on unmodified lines, except completeness gaps
 
 ## Calibration
 
