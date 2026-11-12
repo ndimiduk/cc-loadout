@@ -35,9 +35,12 @@ up on the next session start or `/reload-plugins` in an active session.
 
 ## Editing rules
 
-- **Run lint before any commit.** `bash .scratch/lint-leaks.sh` must report
-  `PASS: zero leaks` across all tracked files. The lint script is gitignored
-  (`.scratch/`); regenerate from this repo's history if missing.
+- **Lint runs on every commit.** A local pre-commit hook
+  (`.git/hooks/pre-commit`) runs `.scratch/lint-leaks.sh` on the staged files
+  and blocks the commit on any hit; run it by hand with `bash
+  .scratch/lint-leaks.sh`. Both are untracked: if the hook is missing,
+  recreate it as a call to the lint; regenerate the lint from this repo's
+  history if missing.
 - **Skill source directories MUST be bare** — `skills/writing-plans/`, not
   `skills/ndimiduk:writing-plans/`. The `ndimiduk:` prefix is applied only at the
   symlink level: `~/.claude/skills/ndimiduk:<name>/ -> .../skills/<name>/`.
