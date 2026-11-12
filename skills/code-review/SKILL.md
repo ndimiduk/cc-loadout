@@ -7,9 +7,11 @@ description: >-
   findings from a code review already reported in the session: "are you
   sure", "pressure-test the findings", "double-check those", "is that real".
   Also use to re-review a PR already reviewed: "take another look", "check
-  the latest", "any updates?". Flags: --comment, --fix, --re-review. For prose use
-  `ndimiduk:prose-review`; for documents and designs use
-  `ndimiduk:argument-audit` or `ndimiduk:design-challenge`.
+  the latest", "any updates?". Invoke it again for each code review,
+  re-review, or question about its findings, even when it is already loaded.
+  Flags: --comment, --fix, --re-review. For prose use `ndimiduk:prose-review`;
+  for documents and designs use `ndimiduk:argument-audit` or
+  `ndimiduk:design-challenge`.
 ---
 
 # Code Review
@@ -19,8 +21,9 @@ access finds issues, a judge agent tries to refute each one, and the
 coordinator reports what survives with citations. Questions about reported
 findings go through the Re-check Protocol.
 
-Every review runs the reviewer and the judge as separate agents, whatever the
-diff size. The coordinator never substitutes its own read for either.
+Every review runs the reviewer as a separate agent, and the judge as another
+whenever there are findings or outside claims to test, whatever the diff size.
+The coordinator never substitutes its own read for either.
 
 ## Flags
 
@@ -161,14 +164,18 @@ in parallel with the same focus areas above. Merge outputs before the judge.
 
 ### Phase 2: Judge
 
-Dispatch a judge with the full diff and all Phase 1 findings. The judge tries
-to refute each claim; a confirmed mechanism alone does not confirm a finding.
-Mark each claim VERIFIED or REFUTED with a citation, or UNCHECKED. No hedging.
-A citation is a `file:line`, doc, or command output that shows the claim
-directly. "Follows from the mechanism" is an inference, so the claim is
-UNCHECKED. An UNCHECKED claim records the searches that were run and why
-they were inconclusive. A claim whose required search wasn't run is not
-UNCHECKED; run the search. A claim that depends on an UNCHECKED claim is
+If Phase 1 returns no findings and there are no outside claims (PR comments
+that assert a defect, or the user's question), skip the judge: it only tests
+claims and may not add new ones. Write an empty ledger and go to Phase 3.
+
+Otherwise dispatch a judge with the full diff, all Phase 1 findings, and the
+outside claims. The judge tries to refute each claim; a confirmed mechanism
+alone does not confirm a finding. Mark each claim VERIFIED or REFUTED with a
+citation, or UNCHECKED. No hedging. A citation is a `file:line`, doc, or
+command output that shows the claim directly. "Follows from the mechanism"
+is an inference, so the claim is UNCHECKED. An UNCHECKED claim records the
+searches that were run and why they were inconclusive. A claim whose required
+search wasn't run is not UNCHECKED; run the search. A claim that depends on an UNCHECKED claim is
 UNCHECKED too.
 
 **Required searches:**
@@ -313,8 +320,10 @@ For "are you sure", "pressure-test", "double-check", and the Phase 3 self-check:
 1. Re-read the ledger file, not your summary. If the PR head has moved past
    the reviewed SHA, say so and check whether later commits changed the
    finding.
-2. Rerun the judge's searches, weakest claims first: UNCHECKED, impact bounds,
-   triggers, mitigations.
+2. Rerun the required searches, weakest claims first: UNCHECKED, impact
+   bounds, triggers, mitigations. When the user questioned a finding, a judge
+   reruns them, given the ledger, the current head, the question, and steps 3
+   and 5; for the Phase 3 self-check, run them yourself.
 3. Change a claim's status only with cited evidence not already in the
    ledger, or by showing its existing citation doesn't support it. The
    question itself is not evidence. A surviving claim keeps its status and
@@ -340,7 +349,7 @@ Hard exclusion list. The judge rejects these even if the reviewer flags them:
 - **Precision over recall.** 3 real findings + 0 false positives builds trust.
   3 real + 5 false destroys it. When in doubt, kill the finding.
 - **Scale the comments, not the process, to diff size.** 5-line fix: 0-2
-  comments. 500-line feature: full coverage. Both get the reviewer and judge.
+  comments. 500-line feature: full coverage.
 - **Senior audience.** Skip basic explanations. Be direct, specific, brief.
 - **Project conventions beat generic advice.** "The project dev guide says X"
   is 10× more useful than "best practice suggests X."
