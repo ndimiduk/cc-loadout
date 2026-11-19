@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Print the lowest plugin version a release of TARGET may carry, given the
+# previous release tag BASE. The skill and agent names are the plugin's only
+# compatibility surface (users reference them from their own instructions), so:
+# a name removed or renamed is a major bump, a name added is minor, and any
+# other change is a patch. With no BASE, this is the first release: 1.0.0.
+#
+# Usage: scripts/next-version [BASE_TAG [TARGET_REF]]
+#   BASE_TAG defaults to the latest v* tag reachable from TARGET_REF.
+#   TARGET_REF defaults to HEAD.
+set -euo pipefail
+
+target="${2:-HEAD}"
+base="${1-$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$target" 2>/dev/null || true)}"
+
+if [ -z "$base" ]; then
+  echo "1.0.0"
+  exit 0
+fi
+
+if [ "$(git rev-list --count "$base..$target")" = 0 ]; then
+  echo "next-version: nothing to release since $base" >&2
+  exit 1
+fi
+
+names() {
+  git ls-tree -r --name-only "$1" -- skills agents |
+    sed -n -e 's#^skills/\([^/]*\)/SKILL\.md$#skill \1#p' \
+           -e 's#^agents/\([^/]*\)\.md$#agent \1#p' |
+    sort
+}
+
+before="$(names "$base")"
+after="$(names "$target")"
+removed="$(comm -23 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))"
+added="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))"
+
+[ -z "$removed" ] || printf 'removed since %s: %s\n' "$base" "$(echo $removed)" >&2
+[ -z "$added" ] || printf 'added since %s: %s\n' "$base" "$(echo $added)" >&2
+
+IFS=. read -r major minor patch <<<"${base#v}"
+if [ -n "$removed" ]; then
+  echo "$((major + 1)).0.0"
+elif [ -n "$added" ]; then
+  echo "${major}.$((minor + 1)).0"
+else
+  echo "${major}.${minor}.$((patch + 1))"
+fi

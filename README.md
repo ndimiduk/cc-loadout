@@ -111,13 +111,20 @@ Use `make uninstall-claude`, `make uninstall-pi`, `make uninstall-codex`,
 ### Releasing
 
 ```sh
-make bump VERSION=0.2.0   # sets the version in both plugin manifests, then checks them
-git commit -am "release 0.2.0"
-git tag v0.2.0 && git push origin main v0.2.0
+make bump                 # computes the next version and sets it in both manifests
+git commit -am "release X.Y.Z"
+git tag vX.Y.Z && git push origin main vX.Y.Z
 ```
 
-CI validates the plugin on every push and pull request, and turns a `v*` tag
-that matches the manifest version into a GitHub release.
+The version tracks the plugin's compatibility surface, the skill and agent
+names that users reference from their own instructions. `make bump` compares
+those names with the previous `v*` tag: a removed or renamed name is a major
+bump, an added name is minor, and any other change is a patch. Pass
+`VERSION=x.y.z` to choose a higher version yourself.
+
+CI validates the plugin on every push and pull request. A `v*` tag becomes a
+GitHub release when it names the manifest version and that version is at least
+the level its name changes require.
 
 ### Other modules (via `ln -s`)
 

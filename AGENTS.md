@@ -48,8 +48,9 @@ session start or `/reload-plugins` in an active session.
   (`~/.claude/skills/ndimiduk:<name>/ -> .../skills/<name>/`) for local installs.
   `make check-plugins` enforces the name rule.
 - **Both `plugin.json` files carry the same version.** Change it only with
-  `make bump VERSION=x.y.z`; installed plugins update only when it changes. See
-  the README's Releasing section.
+  `make bump`, which derives the level from skill and agent name changes since
+  the last tag (renaming or removing one is a major bump); installed plugins
+  update only when it changes. See the README's Releasing section.
 - **Settings fragment is user-authored only.** Never paste in keys that an upstream
   tool manages on this machine — see [`settings/README.md`](./settings/README.md) for
   the rule and the derivation-from-source method.

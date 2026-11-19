@@ -30,13 +30,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Tag matches the plugin version
-        run: |
-          version="$(jq -r .version .claude-plugin/plugin.json)"
-          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
-            echo "tag ${GITHUB_REF_NAME} does not match plugin version ${version}" >&2
-            exit 1
-          fi
+        with:
+          fetch-depth: 0
+      - name: Tag names the plugin version, at the bump level its name changes require
+        run: make check-release TAG="${GITHUB_REF_NAME}"
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

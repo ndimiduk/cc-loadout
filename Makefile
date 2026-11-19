@@ -1,4 +1,4 @@
-.PHONY: install uninstall install-claude uninstall-claude install-pi uninstall-pi install-shared uninstall-shared install-codex uninstall-codex install-bins uninstall-bins check-plugins bump
+.PHONY: install uninstall install-claude uninstall-claude install-pi uninstall-pi install-shared uninstall-shared install-codex uninstall-codex install-bins uninstall-bins check-plugins bump check-release
 
 # Install target (the agent's config dir). Add a new destination by setting a
 # <NAME>_USER variable and adding a $(eval $(call LINK_RULES,<name>,...)) line.
@@ -185,17 +185,41 @@ check-plugins:
 	    echo "FAIL     skills/$$s/SKILL.md has name: '$$name', want '$$s'"; status=1; \
 	  fi; \
 	done; \
-	if [ $$status = 0 ]; then echo "ok       $(words $(SKILL_DIRS)) skill names match their directories"; fi; \
+	for a in $(AGENT_FILES); do \
+	  name="$$(sed -n 's/^name: *//p' "agents/$$a" | head -1)"; \
+	  if [ "$$name" != "$${a%.md}" ]; then \
+	    echo "FAIL     agents/$$a has name: '$$name', want '$${a%.md}'"; status=1; \
+	  fi; \
+	done; \
+	if [ $$status = 0 ]; then echo "ok       $(words $(SKILL_DIRS)) skill and $(words $(AGENT_FILES)) agent names match their files"; fi; \
 	exit $$status
 
-# Usage: make bump VERSION=x.y.z. Marketplace installs receive a new release
-# only when this version changes.
+# Usage: make bump [VERSION=x.y.z]. Without VERSION, scripts/next-version picks
+# the bump level from the skill and agent names changed since the last v* tag.
+# Marketplace installs receive a new release only when this version changes.
 bump:
-	@if ! printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
-	  echo "usage: make bump VERSION=x.y.z" >&2; exit 2; \
-	fi
-	@for m in $(PLUGIN_MANIFESTS); do \
-	  jq --arg v "$(VERSION)" '.version = $$v' "$$m" > "$$m.tmp" && mv "$$m.tmp" "$$m"; \
-	  echo "version  $$m -> $(VERSION)"; \
+	@v="$(VERSION)"; [ -n "$$v" ] || v="$$(scripts/next-version)" || exit 1; \
+	if ! printf '%s' "$$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+	  echo "usage: make bump [VERSION=x.y.z]" >&2; exit 2; \
+	fi; \
+	for m in $(PLUGIN_MANIFESTS); do \
+	  jq --arg v "$$v" '.version = $$v' "$$m" > "$$m.tmp" && mv "$$m.tmp" "$$m"; \
+	  echo "version  $$m -> $$v"; \
 	done
-	@$(MAKE) --no-print-directory check-plugins
+	@$(MAKE) --no-print-directory check-plugins check-release
+
+# Fails when the manifest version is below what the name changes since the
+# previous v* tag require, or when TAG (if given) doesn't name that version.
+# The previous tag is looked up from HEAD^ so a tag on HEAD itself is skipped.
+check-release:
+	@version="$$(jq -r .version .claude-plugin/plugin.json)"; \
+	base="$$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD^ 2>/dev/null || true)"; \
+	required="$$(scripts/next-version "$$base" HEAD)" || exit 1; \
+	lowest="$$(printf '%s\n' "$$required" "$$version" | sort -V | head -1)"; \
+	if [ "$$lowest" != "$$required" ]; then \
+	  echo "FAIL     version $$version is below $$required, required since $${base:-the first release}"; exit 1; \
+	fi; \
+	if [ -n "$(TAG)" ] && [ "$(TAG)" != "v$$version" ]; then \
+	  echo "FAIL     tag $(TAG) does not name plugin version $$version"; exit 1; \
+	fi; \
+	echo "ok       version $$version meets $$required, required since $${base:-the first release}"
