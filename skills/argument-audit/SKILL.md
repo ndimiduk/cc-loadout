@@ -1,5 +1,5 @@
 ---
-name: ndimiduk-argument-audit
+name: argument-audit
 description: >-
   Use when reviewing a research or design PR, or any document that makes
   arguments: design docs, research analyses, ADRs, trade studies, decision

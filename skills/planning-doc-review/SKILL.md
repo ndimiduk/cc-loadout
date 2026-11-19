@@ -1,5 +1,5 @@
 ---
-name: ndimiduk-planning-doc-review
+name: planning-doc-review
 description: Use when reviewing a planning artifact before it is shared or finalized — RFCs, plans, milestone docs, design proposals, OKR and tracker sheets, focus maps and timelines — wherever it lives (repo file, GitHub issue, Google Doc or Sheet, Claude artifact, paste). Triggers on "review this plan", "run the skeptics over it", "pressure-test this RFC", "check the milestones doc", "review the OKRs", or a request to iterate on a doc until the reviews come back clean. For essays use `ndimiduk:prose-review`; to audit only the logic of one document use `ndimiduk:argument-audit`.
 ---
 

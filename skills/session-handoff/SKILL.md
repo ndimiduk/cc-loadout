@@ -1,5 +1,5 @@
 ---
-name: ndimiduk-session-handoff
+name: session-handoff
 description: Use when the session is running out of context or the user wants to hand the work to a later session — "make ready for compaction", "we're out of context", "write a handoff note", "checkpoint this session", "give me the compaction argument", "give me a prompt for resuming", "starting prompt for a new session".
 ---
 

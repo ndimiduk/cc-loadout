@@ -1,5 +1,5 @@
 ---
-name: ndimiduk-post-merge-cleanup
+name: post-merge-cleanup
 description: Use when the user reports that a PR or branch has been merged, shipped, or landed — "merged", "both merged", "shipped", "landed", "PR landed", "it's in", or similar terminal status reports about work done in this session.
 ---
 

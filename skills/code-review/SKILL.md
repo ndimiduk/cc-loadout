@@ -1,5 +1,5 @@
 ---
-name: ndimiduk-code-review
+name: code-review
 description: >-
   Use when reviewing a diff, PR, or set of changes for correctness,
   architecture, and risk: "review this", "code review", "check my changes",
