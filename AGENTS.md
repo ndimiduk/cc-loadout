@@ -27,20 +27,29 @@ fragment:
 
 ## Install model
 
-`make install` symlinks skills into `~/.claude/skills/ndimiduk:<name>/` and
-`~/.agents/skills/ndimiduk:<name>/` (read by both Codex and Pi), and
-`session-tx` into `~/.local/bin/`. Idempotent. `make uninstall` reverses it.
-Non-skill modules (`agents-md/`, `settings/`, `workflow/`) still use plain
-`ln -s` per-module READMEs. Edits to source files are immediately live, picked
-up on the next session start or `/reload-plugins` in an active session.
+The repo root is the `ndimiduk` plugin for Claude Code (`.claude-plugin/`) and
+Codex (`.codex-plugin/`), and the `cc-loadout` marketplace for both
+(`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`). Users
+install the skills from GitHub through those marketplaces.
+
+For local editing, `make install` symlinks skills into
+`~/.claude/skills/ndimiduk:<name>/` and `~/.agents/skills/ndimiduk:<name>/`
+(read by both Codex and Pi), the context files, and the bundled scripts into
+`~/.local/bin/`. Idempotent. `make uninstall` reverses it. Non-skill modules
+(`agents-md/`, `settings/`, `workflow/`) still use plain `ln -s` per-module
+READMEs. Edits to source files are immediately live, picked up on the next
+session start or `/reload-plugins` in an active session.
 
 ## Editing rules
 
 - **Skill source directories MUST be bare** — `skills/writing-plans/`, not
-  `skills/ndimiduk:writing-plans/`. The `ndimiduk:` prefix is applied only at the
-  symlink level: `~/.claude/skills/ndimiduk:<name>/ -> .../skills/<name>/`.
-- **Skills install via `make install`.** Non-skill modules use `ln -s` per
-  their READMEs.
+  `skills/ndimiduk:writing-plans/`, and `name:` equals the directory name. The
+  `ndimiduk:` prefix comes from the plugin namespace, or from the symlink name
+  (`~/.claude/skills/ndimiduk:<name>/ -> .../skills/<name>/`) for local installs.
+  `make check-plugins` enforces the name rule.
+- **Both `plugin.json` files carry the same version.** Change it only with
+  `make bump VERSION=x.y.z`; installed plugins update only when it changes. See
+  the README's Releasing section.
 - **Settings fragment is user-authored only.** Never paste in keys that an upstream
   tool manages on this machine — see [`settings/README.md`](./settings/README.md) for
   the rule and the derivation-from-source method.
@@ -50,13 +59,15 @@ up on the next session start or `/reload-plugins` in an active session.
 ## Adding a skill
 
 1. Drop the new skill at `skills/<name>/SKILL.md` (bare dir, no prefix).
-2. Frontmatter `name:` field matches the dir name.
+2. Frontmatter `name:` field matches the dir name; `make check-plugins` verifies it.
 3. `make install` — picks up the new directory automatically.
 4. Add a one-line description to the skill index below, pulled from the skill's
    frontmatter.
 5. Run lint.
 6. `/reload-plugins` in any Claude session. Verify the skill appears as
    `ndimiduk:<name>` and invokes.
+7. The plugin picks the skill up from `skills/` with no manifest change; it reaches
+   plugin users with the next `make bump` release.
 
 ## When the spec changes
 
