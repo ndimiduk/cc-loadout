@@ -1,0 +1,43 @@
+name: plugins
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Manifests agree and skill names match their directories
+        run: make check-plugins
+      - name: Claude Code validates the plugin and marketplace
+        run: |
+          npm install --global @anthropic-ai/claude-code@2.1.328
+          claude plugin validate .
+          claude plugin validate .claude-plugin/marketplace.json
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tag matches the plugin version
+        run: |
+          version="$(jq -r .version .claude-plugin/plugin.json)"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match plugin version ${version}" >&2
+            exit 1
+          fi
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" --verify-tag --generate-notes
