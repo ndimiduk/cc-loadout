@@ -28,6 +28,7 @@ fragment:
 ## Install model
 
 `make install` symlinks skills into `~/.claude/skills/ndimiduk:<name>/` and
+`~/.agents/skills/ndimiduk:<name>/` (read by both Codex and Pi), and
 `session-tx` into `~/.local/bin/`. Idempotent. `make uninstall` reverses it.
 Non-skill modules (`agents-md/`, `settings/`, `workflow/`) still use plain
 `ln -s` per-module READMEs. Edits to source files are immediately live, picked

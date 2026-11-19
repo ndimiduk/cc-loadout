@@ -2,8 +2,8 @@
 
 Portable AI-agent loadout — a generic AGENTS.md fragment, a user-authored
 settings.json fragment, and a small set of skills that I find generally useful.
-Plain `git clone` + `make install`. No stow. Installs the loadout for Claude Code
-and Pi; the prose is tool-agnostic where it can be.
+Plain `git clone` + `make install`. No stow. Installs the loadout for Claude Code,
+Pi, and Codex; the prose is tool-agnostic where it can be.
 
 ## What's in here
 
@@ -11,7 +11,7 @@ and Pi; the prose is tool-agnostic where it can be.
   file (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, etc.)
 - **`settings/`** — user-authored permissions/hooks fragment (no upstream-managed keys)
 - **`skills/`** — generic skills, each in its own bare-named directory; symlink into
-  `~/.claude/skills/` and `~/.pi/agent/skills/` with `ndimiduk:` prefix to namespace them
+  `~/.claude/skills/` and `~/.agents/skills/` with `ndimiduk:` prefix to namespace them
 - **`tools/`** — standalone scripts for Claude Code and tmux integration (statusline,
   usage sparkline). Not skills — invoked by settings.json or shell config.
 - **`external/`** — pointers to upstream content I rely on but don't redistribute
@@ -41,15 +41,18 @@ make install
 ```
 
 Idempotent — safe to re-run after adding skills. The aggregate target installs
-both destinations:
+every destination:
 
 - Claude Code: `~/.claude/skills/ndimiduk:<name>` and `~/.claude/agents/`
-- Pi: `~/.pi/agent/skills/ndimiduk:<name>`, `~/.pi/agent/agents/`, and
-  `~/.pi/agent/AGENTS.md`
+- Shared skills: `~/.agents/skills/ndimiduk:<name>`, the open agent-skills user
+  location that both Codex and Pi scan. Pi gets its skills only from here, so
+  each skill is listed once.
+- Pi: `~/.pi/agent/agents/` and `~/.pi/agent/AGENTS.md`
+- Codex: `~/.codex/AGENTS.md`. Codex's `config.toml` isn't installed from here.
 - Shared CLI tools: `~/.local/bin/session-tx` and `~/.local/bin/rklint`
 
-Use `make install-claude` or `make install-pi` to install only one agent
-runtime. Override the destination when needed, for example:
+Use `make install-claude`, `make install-pi`, or `make install-codex` to install
+for one agent runtime. Override the destination when needed, for example:
 
 ```sh
 make install-pi PI_USER=/path/to/pi/agent
@@ -60,7 +63,7 @@ symlink level **and** baked into each skill's `name:` frontmatter. Both are
 required for a consistent skill identity across runtimes: Claude Code derives
 the invocation name from the install directory, while opencode and Pi derive it
 from the `name:` field. Keeping `name:` equal to the prefixed symlink dir makes
-the skill resolve as `ndimiduk:<skill>` in all three. (The `package:` field is
+the skill resolve as `ndimiduk:<skill>` in all three. Codex also reads `name:`. (The `package:` field is
 not read by any of them — omit it.) Edits to source files are immediately live.
 Restart sessions or reload plugins as supported by the agent runtime.
 
@@ -70,8 +73,8 @@ To remove all symlinks managed by this repo:
 make uninstall
 ```
 
-Use `make uninstall-claude`, `make uninstall-pi`, or `make uninstall-bins` to
-remove only one destination.
+Use `make uninstall-claude`, `make uninstall-pi`, `make uninstall-codex`,
+`make uninstall-shared`, or `make uninstall-bins` to remove only one destination.
 
 ### Other modules (via `ln -s`)
 
