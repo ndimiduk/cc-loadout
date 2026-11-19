@@ -25,6 +25,12 @@ Every review runs the reviewer as a separate agent, and the judge as another
 whenever there are findings or outside claims to test, whatever the diff size.
 The coordinator never substitutes its own read for either.
 
+Start each agent with a fresh context and give it everything it needs in its
+prompt; don't let it inherit this conversation (in Codex, spawn it with
+`fork_turns: "none"`). A judge that has read the coordinator's reasoning tests
+that reasoning instead of the code. Tell each agent which role it plays, and
+that it must not load this skill or start agents of its own.
+
 ## Flags
 
 - `--comment` — after the user picks findings, post them (see "Posting")
@@ -139,7 +145,10 @@ or `UNCHECKED`:
 - **Location**: file and line range
 - **Mechanism**: what the code does wrong
 - **Trigger**: the production caller chain from an entry point (RPC, worker,
-  job, deploy step). Test, fixture, and dead callers don't count.
+  job, deploy step). Test, fixture, and dead callers don't count. When the
+  changed code is itself an entry point whose callers live outside the repo
+  (a library or public API, a CLI), the trigger is a call made the way its
+  signature and docs describe; having no callers in the repo doesn't refute it.
 - **Impact**: what breaks, for whom, how often, how long. Each bound
   ("permanently", "every run", "30 days") is a separate claim.
 - **Mitigations**: retries, recovery paths, guards, and the PR's own docs or
@@ -187,6 +196,8 @@ claim that depends on an UNCHECKED claim is UNCHECKED too.
 **Required searches:**
 
 - **Trigger**: trace callers to an entry point, ignoring tests and fixtures.
+  For an entry point whose callers live outside the repo, check the call its
+  signature and docs describe.
 - **Impact**: find the code that sets each bound (naming, TTLs, retry counts,
   thresholds, client timeouts). Trace what happens after the failure: the
   operation's own cleanup and retries, and the next run. A claim of
@@ -362,11 +373,14 @@ Hard exclusion list. The judge rejects these even if the reviewer flags them:
 
 ## Model Selection
 
-- **Reviewer**: Sonnet by default. Use Opus when the diff's risk lies in
+- **Reviewer**: a mid-tier model (Claude Sonnet class) by default. Use the
+  strongest available model (Claude Opus class) when the diff's risk lies in
   caller chains across files or in domain semantics (empty vs. absent).
-- **Judge**: Opus. The required searches trace past the diff into callers,
-  libraries, and live config; Sonnet judges skip them and disagree with each
-  other on the same findings.
+- **Judge**: the strongest available model (Claude Opus class). The required
+  searches trace past the diff into callers, libraries, and live config;
+  mid-tier judges skip them and disagree with each other on the same findings.
+- When the agent tool can't choose a model, both agents run on the session's
+  model; run the review in a session on the strongest model available.
 - Context quality (Phase 0) matters more than model choice.
 
 ## Anti-Patterns
