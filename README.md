@@ -60,7 +60,7 @@ when the plugin version changes:
   plugin too.
 
 To stay on one release, add the marketplace at its tag:
-`ndimiduk/cc-loadout#v0.1.0` for Claude Code, `--ref v0.1.0` for Codex.
+`ndimiduk/cc-loadout#v1.0.0` for Claude Code, `--ref v1.0.0` for Codex.
 
 The `session-transcripts` and `research-lint` skills call the `session-tx` and
 `rklint` scripts they bundle by bare name, so put those on your `PATH`: clone
