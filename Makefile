@@ -1,4 +1,4 @@
-.PHONY: install uninstall install-claude uninstall-claude install-pi uninstall-pi install-shared uninstall-shared install-codex uninstall-codex install-bins uninstall-bins
+.PHONY: install uninstall install-claude uninstall-claude install-pi uninstall-pi install-shared uninstall-shared install-codex uninstall-codex install-bins uninstall-bins check-plugins bump
 
 # Install target (the agent's config dir). Add a new destination by setting a
 # <NAME>_USER variable and adding a $(eval $(call LINK_RULES,<name>,...)) line.
@@ -164,3 +164,38 @@ uninstall-bins:
 	    rm "$$target"; \
 	  fi; \
 	done
+
+# ---------------------------------------------------------------------------
+# Plugin manifests. Claude Code and Codex each read their own plugin.json; both
+# must carry the same name and version, and every skill's name: must equal its
+# directory name, because both harnesses publish skills as <plugin>:<name>.
+PLUGIN_MANIFESTS := .claude-plugin/plugin.json .codex-plugin/plugin.json
+
+check-plugins:
+	@status=0; \
+	ids="$$(for m in $(PLUGIN_MANIFESTS); do jq -r '.name + "@" + .version' "$$m"; done | sort -u)"; \
+	if [ "$$(printf '%s\n' "$$ids" | wc -l | tr -d ' ')" != 1 ]; then \
+	  echo "FAIL     plugin manifests disagree on name or version:"; printf '         %s\n' $$ids; status=1; \
+	else \
+	  echo "ok       plugin $$ids in $(PLUGIN_MANIFESTS)"; \
+	fi; \
+	for s in $(SKILL_DIRS); do \
+	  name="$$(sed -n 's/^name: *//p' "skills/$$s/SKILL.md" | head -1)"; \
+	  if [ "$$name" != "$$s" ]; then \
+	    echo "FAIL     skills/$$s/SKILL.md has name: '$$name', want '$$s'"; status=1; \
+	  fi; \
+	done; \
+	if [ $$status = 0 ]; then echo "ok       $(words $(SKILL_DIRS)) skill names match their directories"; fi; \
+	exit $$status
+
+# Usage: make bump VERSION=x.y.z. Marketplace installs receive a new release
+# only when this version changes.
+bump:
+	@if ! printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+	  echo "usage: make bump VERSION=x.y.z" >&2; exit 2; \
+	fi
+	@for m in $(PLUGIN_MANIFESTS); do \
+	  jq --arg v "$(VERSION)" '.version = $$v' "$$m" > "$$m.tmp" && mv "$$m.tmp" "$$m"; \
+	  echo "version  $$m -> $(VERSION)"; \
+	done
+	@$(MAKE) --no-print-directory check-plugins

@@ -9,7 +9,13 @@
   "homepage": "https://github.com/ndimiduk/cc-loadout",
   "repository": "https://github.com/ndimiduk/cc-loadout",
   "license": "CC0-1.0",
-  "keywords": ["planning", "code-review", "design-review", "writing", "verification"],
+  "keywords": [
+    "planning",
+    "code-review",
+    "design-review",
+    "writing",
+    "verification"
+  ],
   "skills": "./skills/",
   "hooks": {}
 }
