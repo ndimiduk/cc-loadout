@@ -1,0 +1,15 @@
+{
+  "name": "cc-loadout",
+  "description": "Nick Dimiduk's agent loadout",
+  "owner": {
+    "name": "Nick Dimiduk",
+    "url": "https://github.com/ndimiduk"
+  },
+  "plugins": [
+    {
+      "name": "ndimiduk",
+      "description": "Planning, review, and verification skills: risk-ordered plans, adversarial design and code review, argument audits, reality checks, and document discipline.",
+      "source": "./"
+    }
+  ]
+}

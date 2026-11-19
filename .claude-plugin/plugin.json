@@ -1,0 +1,13 @@
+{
+  "name": "ndimiduk",
+  "version": "0.1.0",
+  "description": "Planning, review, and verification skills: risk-ordered plans, adversarial design and code review, argument audits, reality checks, and document discipline.",
+  "author": {
+    "name": "Nick Dimiduk",
+    "url": "https://github.com/ndimiduk"
+  },
+  "homepage": "https://github.com/ndimiduk/cc-loadout",
+  "repository": "https://github.com/ndimiduk/cc-loadout",
+  "license": "CC0-1.0",
+  "keywords": ["planning", "code-review", "design-review", "writing", "verification"]
+}
