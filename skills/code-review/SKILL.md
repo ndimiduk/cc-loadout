@@ -16,259 +16,364 @@ description: >-
 
 # Code Review
 
-Four phases: the coordinator gathers context, a reviewer agent with tool
-access finds issues, a judge agent tries to refute each one, and the
-coordinator reports what survives with citations. Questions about reported
-findings go through the Re-check Protocol.
+The coordinator gathers context. A reviewer agent finds defects. When the
+change adds a surface other code is built against, a design reviewer raises
+design questions alongside it. A judge agent tries to refute every finding
+and question, and the coordinator reports what survives, with citations.
+Questions about reported findings go through the Re-check Protocol.
 
-Every review runs the reviewer as a separate agent, and the judge as another
-whenever there are findings or outside claims to test, whatever the diff size.
-The coordinator never substitutes its own read for either.
+Every review runs the reviewer as its own agent, and the judge whenever there
+are findings, design questions, or outside claims to test, whatever the diff
+size. The coordinator never substitutes its own read for either.
 
-Start each agent with a fresh context and give it everything it needs in its
-prompt; don't let it inherit this conversation (in Codex, spawn it with
+Start each agent with a fresh context and everything it needs in its prompt;
+it must not inherit this conversation (in Codex, spawn it with
 `fork_turns: "none"`). A judge that has read the coordinator's reasoning tests
-that reasoning instead of the code. Tell each agent which role it plays, and
-that it must not load this skill or start agents of its own.
+that reasoning instead of the code. Tell each agent its role, and that it must
+not load this skill or start agents of its own.
 
 ## Flags
 
-- `--comment` — after the user picks findings, post them (see "Posting")
-- `--fix` — apply fixes to working tree after review
-- `--re-review` — review only what changed since the last reviewed commit (see
-  "Re-review")
+- `--comment` — post the findings the user picks (see "Posting")
+- `--fix` — apply fixes to the working tree after the review
+- `--re-review` — review only what changed since the last reviewed commit
+  (see "Re-review")
 
-## Process
+## Phase 0: Gather Context
 
-### Phase 0: Gather Context (coordinator does this, not a subagent)
+The coordinator collects this itself and puts all of it in the reviewer's
+prompt.
 
-Collect project context before dispatching the reviewer. This is what makes the
-review grounded rather than vibes-based. Inject all of it into the reviewer prompt.
-
-**Always gather:**
+**Always:**
 
 1. **Project instructions**: `CLAUDE.md`, `REVIEWING.md`, `CONTRIBUTING.md`,
-   `.github/CODEOWNERS` — read from repo root and from directories touched by
-   the diff.
-2. **Diff scope**: `git diff --stat {BASE}..{HEAD}`, where BASE is the
-   merge-base of HEAD and the PR's base branch.
-3. **Full diff**: `git diff {BASE}..{HEAD}`. For large diffs (>1000 lines
-   changed), provide a file list instead. Instruct reviewers and judges to
-   read per-file diffs, never print the full diff, and write findings to a
-   file as they go so a context overflow doesn't lose the work.
-4. **Intent**: the text of the issue or task the change addresses and, for a
-   PR, its description. **For a PR**, also its conversation (`gh pr view
-   --comments` and review threads), and the PR head checked out in a
-   worktree. Fetch any other local clone the review will read, and read the
-   ref the PR builds against.
+   `.github/CODEOWNERS`, at the repo root and in directories the diff touches.
+2. **Diff**: `git diff --stat {BASE}..{HEAD}` and `git diff {BASE}..{HEAD}`,
+   where BASE is the merge-base with the PR's base branch. Over 1000 changed
+   lines, pass a file list instead. Tell every agent to read per-file diffs,
+   never print the whole diff, and write its results to a file as it goes.
+3. **Intent**: the issue or task text and the PR description. For a PR, also
+   its conversation (`gh pr view --comments` and review threads) and its head
+   checked out in a worktree. Fetch any other local clone the review will
+   read, at the ref the PR builds against.
+4. **Prior decisions**, for a PR in a stack (its base is another open PR's
+   branch, or its description lists a stack): from every PR in the stack, the
+   earlier ledgers, review threads, and stack-level comments, each with how it
+   ended (fixed, declined with a reason, deferred to a named PR or phase); and
+   the deferrals in the plan or design doc the stack implements.
 
-**Gather when available:**
+**When available:**
 
-5. **Memex/fieldbook**: If a vault exists (e.g., `~/src/braindump/`), grep for
-   notes related to the project, libraries, or patterns touched by the diff.
-   Prior positions on conventions and architectural patterns are review context.
-6. **Project documentation**: README, architecture docs, ADRs in `docs/` or
-   `design/`.
-7. **Recent git history**: `git log --oneline -20 {BASE}..{HEAD}` for commit
-   narrative; `git log --oneline -10 -- <changed-files>` for recent history
-   on touched files.
+5. **Vault notes**: if a vault exists (e.g., `~/src/braindump/`), grep it for
+   the project, libraries, and patterns the diff touches.
+6. **Project docs**: README, architecture docs, ADRs in `docs/` or `design/`.
+7. **History**: `git log --oneline -20 {BASE}..{HEAD}`, and
+   `git log --oneline -10 -- <changed-files>`.
+8. **CI config**: `.github/workflows/`, `Makefile`, `pom.xml`, `package.json`,
+   for the automated checks that already run; the reviewer doesn't duplicate
+   them.
+9. **Conventions**: style guides and lint config. For well-known projects,
+   `WebSearch` for conventions, recent API changes, or known pitfalls, only
+   where the diff touches areas that need project-specific knowledge.
 
-**Gather for broader context:**
+**Skip the review** if the diff is empty, purely mechanical (formatting,
+dependency bumps with no code changes), or already reviewed at this head with
+no uncommitted changes or new comments since. A reviewed PR with changes gets
+a re-review.
 
-8. **CI config**: Check `.github/workflows/`, `Makefile`, `pom.xml`,
-   `package.json` to understand what automated checks already run. The reviewer
-   must NOT duplicate what CI catches.
-9. **Project conventions**: Style guides, coding standards, linting config. For
-   well-known projects, use `WebSearch` to find relevant conventions, recent
-   API changes, or known pitfalls — but only when the diff touches areas
-   where project-specific knowledge matters.
+## Phase 1: Review
 
-**Scope the review:**
+Dispatch one reviewer with the Phase 0 context, the diff or file list, the
+focus areas below, and these tools: Read, Bash (grep, git blame, git log),
+WebSearch, and, for decision-logic mutants, Edit and the module's test command
+in the scratch worktree only. It cites a source for every claim.
 
-10. **Eligibility check**: Skip review if the diff is (a) empty, (b) purely
-   mechanical (formatting, dependency bumps with no code changes), or (c)
-   already reviewed at this head commit, with no uncommitted changes or new
-   comments since. Otherwise a reviewed PR gets a re-review.
+**Focus areas:**
 
-### Phase 1: Review
+- **Correctness**: logic errors, off-by-one, races, incorrect API usage, null
+  hazards, resource leaks, error-handling gaps on critical paths. Watch
+  Optional and nullable chaining, lambda scoping, and what return values mean
+  (empty vs. absent).
+- **Completeness**: every place the intent says the change applies, including
+  code the diff doesn't touch: other callers of what it replaces, other entry
+  points to the same behavior. A path the description or commits defer is not
+  a gap.
+- **Changed behavior**: deleted code with side effects, changed semantics
+  callers depend on, weakened preconditions, removed error handling. Trace
+  callers of changed interfaces with `git blame` and `grep`.
+- **Backwards compatibility**: existing callers, stored data, and in-flight
+  requests when this ships. When the diff replaces a heuristic or algorithm,
+  ask whether the old behavior should stay as a rollout fallback.
+- **Conventions**: violations of the project instructions, documented
+  conventions, or patterns established in adjacent code; not generic best
+  practice.
+- **Architecture**: design issues, wrong abstractions, coupling, security
+  concerns,
+  responsibilities added in the wrong place. Trace data flow across files; for
+  API changes, check consumers.
+- **Test correctness**: inputs that miss the path under test, assertions that
+  would pass with the code broken, setup that lands on a fallback path,
+  security invariants (auth checks, permission guards) not asserted on every
+  path.
+- **Decision-logic mutants**: when the diff changes logic whose wrong answer
+  grants access, loses data, or routes a request, message, or job to the
+  wrong tenant, cluster, or destination (authorization rules, policy tables,
+  combinators over per-item results, state machines), mutate its decision
+  points on changed lines.
+  - Use a scratch worktree at the reviewed state (HEAD plus any uncommitted
+    diff), never the review worktree, a log directory no other review
+    shares, and the narrowest test selector that covers the code. Run the tests unmutated first; if they fail, run no
+    mutants and say so.
+  - One mutant per decision point, with the operator most likely to survive:
+    move a value between sets, flip a comparison, loosen a match (exact to
+    substring, prefix, or case-insensitive), swap all/any, drop a branch, swap
+    which outcome wins. Prefer the mutant that fails open: admits more,
+    keeps more, or routes more widely. At most 15 per review, those nearest
+    the access, data, or routing outcome first; list the rest as not run.
+  - Survivors in one function or table make one finding. Its mechanism is
+    the mutants and the test output, its trigger the caller chain to the
+    decision point, its impact what the mutant would do on that chain.
+  - Return every mutant run, with the test that killed it or SURVIVED.
+- **Indistinguishable failure**: on a path in the mutants' scope, an error or
+  a state only a bug produces gets the same outcome as a legitimate case
+  (deny, skip, default), or several distinct causes collapse into one
+  outcome, and the logs, the metrics, and the response all look the same
+  across them. Impact is the cases a caller or operator can't tell apart; cite the
+  log, metric, and response lines for each.
+- **Efficiency**: expensive operations (RPCs, network calls, disk I/O) before
+  a guard that would skip them.
+- **Runtime resilience**: new external dependencies on hot paths: timeouts,
+  behavior when they're slow or down, cache refresh failures, blocking calls
+  per request in degraded mode.
+- **Rollout risk**: missing fallbacks or feature flags for behavior changes;
+  degraded-mode operation that logs and metrics can't tell from real failure.
+- **Bug hotspots**: untested changes in files with a high bug-fix history
+  (`git log --grep="fix\|bug\|revert" -- <file>`).
 
-Dispatch a single reviewer agent. It receives the full diff (or file list for
-large diffs), all project context from Phase 0, and tool access.
+For diffs over 1000 lines or 20 files, a separate risk agent may take runtime
+resilience, rollout risk, and bug hotspots in parallel; merge its output
+before the judge.
 
-**Reviewer prompt must include:**
-
-- The full gathered context (project docs, memex excerpts, git history)
-- The diff or file list
-- The review focus areas below
-- Explicit tool permissions: Read files, Bash (grep, git blame, git log), WebSearch
-- Instruction to cite sources for every finding
-
-**Review focus areas** (all checked by the single reviewer):
-
-- **Correctness**: Logic errors, off-by-one, race conditions, incorrect API
-  usage, null/undefined hazards, resource leaks, error handling gaps on
-  critical paths. Pay close attention to Optional/nullable chaining, lambda
-  scoping, and semantic meaning of return values (e.g., empty vs. absent).
-- **Completeness**: Find every place the intent says the change applies,
-  including code the diff doesn't touch: other callers of what it replaces,
-  other entry points to the same behavior. Report each one still left out. A
-  path the change's description or commits defer is not a gap.
-- **Changed behavior**: Deleted code with side effects, changed semantics that
-  callers depend on, weakened preconditions, removed error handling. Use
-  `git blame` and `grep` to trace callers of changed interfaces.
-- **Backwards compatibility**: What happens to existing callers, stored data,
-  or in-flight requests when this ships? If the diff replaces a heuristic or
-  algorithm, ask whether the old behavior should be preserved as a fallback
-  during rollout. If the diff changes a public interface, check who consumes
-  it.
-- **Project conventions**: Violations of CLAUDE.md, REVIEWING.md, CONTRIBUTING.md,
-  or patterns established in adjacent code. Only flag documented or clearly
-  established conventions — not generic "best practices."
-- **Architecture**: Design issues, wrong abstractions, coupling, security
-  concerns. Trace data flow across file boundaries; for API changes, check
-  consumers. Ask whether new responsibilities belong in the file where they
-  were added or should be encapsulated elsewhere.
-- **Test correctness**: Do the tests actually test what they claim? Check that
-  test inputs exercise the code path under test and that assertions would
-  fail if the code were broken. Watch for tests that pass vacuously due to
-  setup that matches a fallback path. Verify that security invariants
-  (auth checks, permission guards) are asserted in all test paths.
-- **Efficiency**: Are expensive operations (RPCs, network calls, disk I/O)
-  performed before a guard that would skip them? If a filter or skip
-  condition exists, check whether it's applied early enough in the call
-  chain to avoid wasted work.
-
-The reviewer returns a list of findings. Each finding states these claims
-separately, each with a source (diff line, `file:line`, doc, command output)
-or `UNCHECKED`:
+**Each finding** states these claims separately, each with a source (diff
+line, `file:line`, doc, command output) or `UNCHECKED`:
 
 - **Location**: file and line range
 - **Mechanism**: what the code does wrong
 - **Trigger**: the production caller chain from an entry point (RPC, worker,
-  job, deploy step). Test, fixture, and dead callers don't count. When the
-  changed code is itself an entry point whose callers live outside the repo
-  (a library or public API, a CLI), the trigger is a call made the way its
-  signature and docs describe; having no callers in the repo doesn't refute it.
+  job, deploy step); test, fixture, and dead callers don't count. For an
+  entry point whose callers live outside the repo (a library, public API, or
+  CLI), the trigger is a call made the way its signature and docs describe;
+  having no callers in the repo doesn't refute it.
 - **Impact**: what breaks, for whom, how often, how long. Each bound
   ("permanently", "every run", "30 days") is a separate claim.
 - **Mitigations**: retries, recovery paths, guards, and the PR's own docs or
-  comments that address the issue
+  comments on the issue
 - **Novelty**: base-branch behavior for the same trigger; for a completeness
   gap, the intent text that asks for different behavior
 - **Fix**: concrete, or "no obvious fix"
 
-The reviewer does not assign severity; the judge does.
+The reviewer returns every issue with a mechanism, minor ones included.
+Severity and dropping belong to the judge.
 
-**Risk focus areas** (also checked by the primary reviewer):
+## Design Lane
 
-- **Runtime resilience**: New external dependencies in hot paths — what happens
-  when they're slow or down? Is there a timeout? Does the cache handle refresh
-  failures gracefully? How many blocking calls per request in degraded mode?
-- **Rollout risk**: Missing fallbacks for behavior changes, missing feature
-  flags for gradual rollout, no way to distinguish planned degraded-mode
-  operation from real failures in logs/metrics.
-- **Bug hotspot awareness**: `git log --grep="fix\|bug\|revert" -- <file>` for
-  changed files with high bug-fix history. Flag untested changes in hotspot
-  files.
+**Runs when** the diff adds a declaration, or changes the name, type, or
+signature of one, that code outside its module compiles against or parses, or
+is meant to (a library's public API): API and model types; wire schemas
+(JSON, CHIRP, protobuf, Avro, REST, Kafka); config schemas and CRDs; database
+schemas other services read. For generated code, the declaration is in the
+schema file. Questions are raised only on the declarations that qualify and
+the logic behind them. Otherwise the output says in one line that the lane
+didn't run.
 
-**Optional: Split risk agent** (for very large diffs only)
+**Vocabulary sources.** The coordinator fetches the spec or design doc the
+change implements and the source of each system whose values cross the
+declaration, at the version the build resolves, and cites those versions. A
+source it can't fetch is listed as missing, and no class 1 question is raised
+against it.
 
-For diffs >1000 lines or >20 files, the primary reviewer's context may not fit
-the full diff plus risk analysis. In that case, dispatch a separate risk agent
-in parallel with the same focus areas above. Merge outputs before the judge.
+**Design reviewer.** A separate agent, dispatched in parallel with the
+reviewer. It returns design questions, not findings; a defect it notices goes
+in a note, which the coordinator passes to the judge as an outside claim.
+Each question has:
 
-### Phase 2: Judge
+- **Location**: the `file:line` its evidence class cites
+- **Question**: one sentence to the author, as a question
+- **Evidence class**: one of the five below
+- **Evidence**: the citations the class requires, each a path or URL with a
+  line or section; citations from memory don't count
 
-If Phase 1 returns no findings and there are no outside claims (PR comments
-that assert a defect, or the user's question), skip the judge: it only tests
-claims and may not add new ones. Write an empty ledger and go to Phase 3.
+A question that fits no class is not raised. Each class names the search the
+judge runs to refute it.
 
-Otherwise dispatch a judge with the full diff, the Phase 0 intent, all Phase 1
-findings, and the outside claims. The judge tries to refute each claim; a
-confirmed mechanism alone does not confirm a finding. Mark each claim VERIFIED
-or REFUTED with a citation, or UNCHECKED. No hedging. A citation is a
-`file:line`, doc, or command output that shows the claim directly. "Follows
-from the mechanism" is an inference, so the claim is UNCHECKED. An UNCHECKED
-claim records the searches that were run and why they were inconclusive. A
-claim whose required search wasn't run is not UNCHECKED; run the search. A
-claim that depends on an UNCHECKED claim is UNCHECKED too.
+1. **Vocabulary conflict**: a value flows between this declaration and
+   another system, which calls it something else or uses the declaration's
+   name for something else. Cite the line where the value passes to or from
+   that system, and that system's definition.
+   Refuted if the name matches the term on the side the value flows to, or
+   the module is a translation layer that documents its own vocabulary.
+2. **Misleading name**: the question states, as a concrete prediction, what a
+   caller reading the name would expect, and cites the code that makes it
+   false: `maxRetries = 3` reads as three retries; `Client.java:88` makes
+   three attempts.
+   Refuted if the code doesn't contradict the prediction, or the name is the
+   spec's term for the value.
+3. **Weaker type than one in use**: a string, primitive, or bare collection
+   carries a value this repo already converts to or from a type (cite the
+   conversion site), or that an integrated system produces from a closed enum
+   (cite the producing line). At a wire boundary, the question says what an
+   unknown value would do.
+   Refuted if the conversion site is test or dead code, the type isn't
+   reachable from this module under the repo's layering rules, or the string
+   is a documented
+   forward-compatibility choice.
+4. **Unstated precedence**: decision logic in the mutants' scope picks
+   between outcomes when more than one applies (precedence, exception,
+   default), and neither the code, its doc, nor the PR names the rule. Cite
+   the line that picks, and the spec section if one exists.
+   Refuted if the code, its doc, or the PR names the rule.
+5. **Behavior outside its type**: two or more sites branch the same way on a
+   value of a type this diff adds. Cite each site.
+   Refuted if the sites branch differently, or the type can't hold behavior
+   (generated code, or a project rule forbids it; cite the rule).
+
+Phase 2 judges and ranks the questions.
+
+## Phase 2: Judge
+
+Skip the judge when there are no findings, no design questions, and no
+outside claims (PR comments asserting a defect, or the user's question): it
+tests claims and adds none. Write an empty ledger and go to Phase 3.
+
+Otherwise dispatch it with the diff, the Phase 0 intent and prior decisions,
+every finding and design question, the outside claims, and, for design
+questions, the evidence classes with their refutation searches and the
+vocabulary sources at their cited versions. It tries to refute each claim
+and marks it VERIFIED or REFUTED with a citation, or UNCHECKED. No hedging. A citation is a `file:line`, doc, or command output that shows the
+claim directly; "follows from the mechanism" is an inference, so that claim
+is UNCHECKED. An UNCHECKED claim lists the searches run and why they were
+inconclusive. A claim whose required search wasn't run is not UNCHECKED: run
+the search. A claim that depends on an UNCHECKED claim is UNCHECKED too. A
+confirmed mechanism alone does not confirm a finding.
 
 **Required searches:**
 
-- **Trigger**: trace callers to an entry point, ignoring tests and fixtures.
-  For an entry point whose callers live outside the repo, check the call its
-  signature and docs describe.
+- **Trigger**: trace callers to an entry point, ignoring tests and fixtures;
+  for callers outside the repo, check the call its signature and docs
+  describe.
 - **Impact**: find the code that sets each bound (naming, TTLs, retry counts,
-  thresholds, client timeouts). Trace what happens after the failure: the
-  operation's own cleanup and retries, and the next run. A claim of
-  "permanent", "only", or "no other" requires searching for the alternative,
-  such as a recovery path or a second guard.
-- **Mitigations**: read the PR description, changed docs, and nearby comments.
-  If the author addressed the issue, the finding is the gap in that mitigation
-  and is rated as that gap.
-- **Novelty**: check the base branch, or for a completeness gap, the intent.
-- **Fix**: check the suggested fix against the code it touches: visibility
-  and package of every member it uses or adds, signatures, callers it would
-  break, and whether the change makes the test fail when the bug is present.
-  A wrong fix doesn't drop the finding; replace it with a fix that passes
-  these checks, or mark it "needs research".
+  thresholds, client timeouts), and trace what happens after the failure: the
+  operation's own cleanup and retries, and the next run. "Permanent", "only",
+  or "no other" requires searching for the alternative, such as a recovery
+  path or a second guard.
+- **Mitigations**: read the PR description, changed docs, and nearby
+  comments. If the author addressed the issue, the finding is the gap in that
+  mitigation, rated as that gap. For an indistinguishable failure, failing
+  closed is not a mitigation, and documented intent to fail closed is not
+  intent to be indistinguishable.
+- **Mutants**: rerun each survivor and show an input on which its output
+  differs from the original's; with none, drop it as equivalent. A mutant the
+  judge can't run is UNCHECKED, with the build error.
+- **Novelty**: the base branch, or for a completeness gap, the intent.
+- **Fix**: check it against the code it touches: visibility and package of
+  every member it uses or adds, signatures, callers it would break, and
+  whether it makes the test fail with the bug present. A wrong fix doesn't
+  drop the finding; replace it with one that passes these checks, or mark it
+  "needs research".
+- **Design questions**: open each citation at the cited version and
+  location, then run the class's refutation search.
 
-**Verdict:**
+**Findings:**
 
-- Report only if mechanism, trigger, impact, and novelty are all VERIFIED.
-  Drop findings with an UNCHECKED claim, unless the user asked for a
-  thorough review; then report them labeled and rated low.
+- Report only if mechanism, trigger, impact, and novelty are VERIFIED. Drop a
+  finding with an UNCHECKED claim, unless the user asked for a thorough
+  review; then report it labeled and rated low.
 - Drop if the mechanism, trigger, or novelty is REFUTED. If the impact as
   worded is REFUTED, restate it as the consequence the code shows; drop only
-  if no consequence survives.
-- Drop if the behavior is the design's intent, as stated in docs or
-  comments. A hazard the docs warn about is a mitigation, not intent.
-- There is no informational tier.
+  if none survives.
+- Drop if the behavior is the design's intent as stated in docs or comments.
+  A hazard the docs warn about is a mitigation, not intent.
+- Impact is VERIFIED at the furthest consequence with a citation ("publishes
+  a duplicate Kafka event"). Cut what lies past it ("consumers double-count")
+  and rate what remains.
+- Assign severity from VERIFIED claims only. A test-coverage gap is low unless
+  the code it fails to cover is broken today. There is no informational tier.
 - Merge findings that share a root cause, such as two paths into the same
   non-idempotent handler.
-- Impact is VERIFIED at the furthest consequence that has a citation, such
-  as "publishes a duplicate Kafka event". Cut everything past that point,
-  such as "consumers double-count", and rate what remains.
-- Assign severity from VERIFIED claims only. A test-coverage gap is low,
-  unless the code it fails to cover is broken today.
-- End each finding with a gate line, e.g.
+- End each with a gate line:
   `Gate: mechanism ✓ trigger ✓ impact ✓ novelty ✓ fix ✓ → REPORT, medium`,
   where `fix ✗` means the fix was replaced and says why.
 
-**Also drop:**
+Drop these findings even when the reviewer flags them (these rules don't
+apply to design questions):
 
-- Issues automated tooling catches (linter, compiler, type checker, CI)
+- Issues that linters, formatters, compilers, type checkers, or CI catch
+- Missing documentation or Javadoc, unless the project's CLAUDE.md or the
+  spec the change implements requires it
+- Renaming or minor style not in project conventions
 - Generic quality suggestions not grounded in project conventions
+- Generic security advice not specific to the actual code path
+- "Consider adding tests" for trivial cases (null checks, guard clauses)
 - API claims the reviewer didn't check
-- Nitpicks a senior engineer wouldn't raise
-- Filler ("great use of X")
-- Duplicates
-- Suggestions on lines the author didn't modify, except completeness gaps
+- Intentional functionality changes the PR states (cite the text)
+- Pre-existing issues on lines the author didn't modify, and suggestions
+  about those lines, except completeness gaps. A defect the diff causes in
+  unmodified code is a finding.
+- Nitpicks a senior engineer wouldn't raise, filler, and duplicates
 
-The judge may reword or merge findings but must not invent new ones.
+**Design questions:**
+
+- Keep a question when its citations open as cited and its refutation search
+  finds nothing, and end it with a gate line:
+  `Gate: evidence ✓ refutation (layering rules, consumers) ✗ → KEEP`.
+- Drop questions on declarations or logic the diff doesn't add or change, on
+  declarations that don't qualify the lane, on anything tooling enforces, and
+  duplicates. When a finding and a question
+  share a location and cause, keep the finding. Questions on the same
+  declaration merge, keeping each class's evidence line.
+- A question stays a question. When its evidence shows a defect, the judge
+  says so, and the coordinator sends that to the reviewer.
+- Questions carry no severity. Rank them one-way doors first, by how hard the
+  answer is to change after merge, citing where the declaration is parsed,
+  stored, or compiled against:
+  1. A wire format, persisted data, or a schema another service reads
+  2. A declaration code in another repo compiles against
+  3. A declaration another module in this repo compiles against
+  4. Anything else
+
+  Within a tier, an answer that changes a name, type, or signature comes
+  before one that adds a doc; then the declaration with more consumers.
+  Report the top five; the rest stay in the ledger, one line each, with their
+  tier.
+
+**Prior decisions.** Drop a finding or question with the same root cause as a
+prior decision on any PR in the stack, or as a deferral in the plan or design
+doc, unless this diff changes what the decision rested on; then report it,
+citing the decision and the change. An item deferred to this PR or phase is
+part of its intent: check it as a completeness gap. A diff that undoes a prior
+fix is a finding.
+
+The judge may reword or merge findings and questions as above, but must not
+invent either.
 
 **Ledger.** The judge returns every claim with its status and citation. The
-coordinator writes this to a scratch file (`review-ledger-<pr>-<sha>.md`) and
-cites the path in the output. Re-checks start from the ledger.
+coordinator writes it to `review-ledger-<pr>-<sha>.md` in scratch and cites
+the path; re-checks start from it. After the user decides, the coordinator
+records each decision with its reason and source (the user's call in the
+conversation, the author's reply, or the thread's resolution), and each
+design question's outcome: posted, dropped, or reworded.
 
-### Phase 3: Output
+## Phase 3: Output
 
-**Report the ledger as is.** The coordinator does not raise severity, add
-impact bounds, or reach a merge verdict the ledger doesn't support. To overrule
-the judge, it records new evidence in the ledger first. "I verified this" names
-and cites the claims it covers.
-
-**Re-check high or blocking findings** with the protocol below before
+Report the ledger as is: no severity, impact bound, or merge verdict the
+ledger doesn't support. To overrule the judge, record new evidence in the
+ledger first; "I verified this" names and cites the claims it covers.
+Re-check high or blocking findings with the Re-check Protocol before
 presenting them.
 
-**Source attribution**: Every surviving finding cites its basis:
-- `DIFF` — specific diff lines exhibiting the issue
-- `PROJECT_DOC` — which document (CLAUDE.md, CONTRIBUTING.md, style guide, etc.)
-- `CODEBASE` — file:line in the repo that informs the finding
-- `GIT_HISTORY` — commit or blame output providing context
-- `WEB` — URL of external documentation consulted
-
-**Format:**
+Every finding cites its basis: `DIFF` (diff lines), `PROJECT_DOC` (which
+document), `CODEBASE` (`file:line`), `GIT_HISTORY` (commit or blame), or `WEB`
+(URL).
 
 ```
 ### Code Review
@@ -284,122 +389,132 @@ Found N issues:
    Mitigations: what was checked, what was found
    Fix: concrete suggestion
 
-...
+Mutants: each one run, with the test that killed it or SURVIVED, or why none ran
 
-Ledger: <path to claim ledger>
+### Design Questions
+
+N questions (M more in the ledger), or "Design lane: not run (no public surface)":
+
+1. **[tier 1: wire format]** file.java:12 — Question to the author?
+   Evidence (vocabulary conflict): <citation> vs <citation>
+   Evidence (<another class>, when merged): <citations>
+   Tier: <where it is parsed, stored, or compiled against>
+
+Ledger: <path>
 Sources consulted:
 - [project docs, codebase files, web URLs read during review]
 ```
 
-Zero issues is a valid outcome. Report "No issues found" with a summary of what
-was checked and which project docs were consulted.
+Zero issues is a valid outcome: report "No issues found" with what was
+checked and which project docs were consulted.
 
-**`--fix` mode**: Apply reported findings that have a concrete fix. Show what
-was applied.
+`--fix` applies the reported findings that have a concrete fix and shows what
+changed.
 
-**Discuss before posting.** On a PR you don't own, present the findings and
-wait; the user decides which, if any, are posted. This holds with `--comment`.
+On a PR the user doesn't own, present the results and wait; the user decides
+what, if anything, is posted, with or without `--comment`.
 
 ## Posting
 
-After the user picks findings:
+After the user picks:
 
 1. Refresh the PR and the review worktree. If the head moved or new comments
-   arrived since the review, re-review the delta (below); if that changes a
-   picked finding, report back before posting.
+   arrived, re-review the delta; if that changes a picked item, report back
+   before posting.
 2. Post with `shipping-code`'s `post-comment` script (`--file`/`--line` for
-   lines in the diff, `--general` for the rest), not its PR workflow, using
-   full SHAs in file links. Never post an UNCHECKED claim.
-3. Write as the user, applying `ndimiduk:document-discipline`: state the
-   problem and its evidence; no "we", no account of how the review ran.
-   Leave the fix to the author unless the user asks to include one. Sign per
-   the user's convention.
+   lines in the diff, `--general` otherwise), not its PR workflow, with full
+   SHAs in file links. Never post an UNCHECKED claim.
+3. Write as the user, applying `ndimiduk:document-discipline`: the problem and
+   its evidence; no "we", no account of how the review ran. Leave the fix to
+   the author unless the user asks for one. Sign per the user's convention.
+4. Post a design question as a question, with its evidence. Name a term or
+   type only when the evidence cites an existing one; leave new names to the
+   author.
+
+Replies drafted for threads the user started follow steps 3 and 4. When the
+user's comment may rest on a wrong premise, send the premise to the judge as
+an outside claim. The reply corrects it only when the judge REFUTES it with a
+citation, and keeps the point that survives.
 
 ## Re-review
 
-For `--re-review` and for "take another look" on a PR already reviewed:
+For `--re-review` and "take another look" on a reviewed PR:
 
 1. Check out the PR head in the review worktree and fetch its comments. Take
    the last reviewed commit from the ledger, else the commit of the user's
-   last comment on the PR, else run a full review.
-2. Run Phases 1–2 on `git diff <T>` plus the new comments, with the earlier
-   ledger as context. T is the first line of `git merge-tree --write-tree
-   <last-reviewed> <BASE>`: the reviewed state replayed onto the current base,
-   so rebases, base merges, and uncommitted fixes all reduce to the real
-   change. Bot comments go to the judge as claims. Don't re-raise findings
-   already resolved or declined.
+   last comment on the PR; with neither, run a full review.
+2. Run Phases 1–2, and the Design Lane when it runs, on `git diff <T>` plus
+   the new comments, with the earlier ledger as context. T is the first line of
+   `git merge-tree --write-tree <last-reviewed> <BASE>`: the reviewed state
+   replayed onto the current base, so rebases, base merges, and uncommitted
+   fixes reduce to the real change. Bot comments go to the judge as claims.
+   Resolved, declined, and dropped items follow the prior-decisions rule.
 3. Report what's new or changed, and write a ledger at the new head.
 
 ## Re-check Protocol
 
-For "are you sure", "pressure-test", "double-check", and the Phase 3 self-check:
+For "are you sure", "pressure-test", "double-check", and the Phase 3
+self-check:
 
-1. Re-read the ledger file, not your summary. If the PR head has moved past
-   the reviewed SHA, say so and check whether later commits changed the
-   finding.
+1. Re-read the ledger file, not your summary. If the head has moved past the
+   reviewed SHA, say so and check whether later commits changed the finding.
 2. Rerun the required searches, weakest claims first: UNCHECKED, impact
-   bounds, triggers, mitigations. When the user questioned a finding, a judge
-   reruns them, given the ledger, the current head, the question, and steps 3
-   and 5; for the Phase 3 self-check, run them yourself.
+   bounds, triggers, mitigations; for a design question, its citations and
+   refutation search. When the user questioned a finding, a judge reruns
+   them, given the ledger, the current head, the question, and steps 3 and 5;
+   for the self-check, run them yourself.
 3. Change a claim's status only with cited evidence not already in the
-   ledger, or by showing its existing citation doesn't support it. The
-   question itself is not evidence. A surviving claim keeps its status and
-   citation; "all findings hold" is a valid answer.
+   ledger, or by showing its citation doesn't support it. The question itself
+   is not evidence. A surviving claim keeps its status and citation; "all
+   findings hold" is a valid answer.
 4. Report only the changes: finding, claim, before, after, new evidence, and
-   resulting severity. List unchanged findings in one line. Update the ledger.
+   resulting severity. List unchanged findings in one line. Update the
+   ledger.
 5. For each change, name the search the first pass skipped.
-
-## NEVER Comment On
-
-Hard exclusion list. The judge rejects these even if the reviewer flags them:
-
-- Issues linters, formatters, type checkers, or CI catch
-- Missing documentation/javadoc/docstring (unless CLAUDE.md requires it)
-- Generic security advice not specific to the actual code path
-- Renaming or minor style not in project conventions
-- "Consider adding tests" for trivial cases (null checks, guard clauses)
-- Intentional functionality changes evident from PR context
-- Pre-existing issues on unmodified lines, except completeness gaps
 
 ## Calibration
 
-- **Precision over recall.** 3 real findings + 0 false positives builds trust.
-  3 real + 5 false destroys it. When in doubt, kill the finding.
-- **Scale the comments, not the process, to diff size.** 5-line fix: 0-2
-  comments. 500-line feature: full coverage.
-- **Senior audience.** Skip basic explanations. Be direct, specific, brief.
+- **Precision over recall.** Three real findings and no false ones build
+  trust; three real and five false destroy it. When in doubt, drop the
+  finding or question.
+- **Scale the comments, not the process, to the diff.** A 5-line fix gets 0–2
+  comments; a 500-line feature gets full coverage.
+- **Senior audience.** Direct, specific, brief; no basic explanations.
 - **Project conventions beat generic advice.** "The project dev guide says X"
-  is 10× more useful than "best practice suggests X."
+  outweighs "best practice suggests X".
 
 ## Model Selection
 
-- **Reviewer**: a mid-tier model (Claude Sonnet class) by default. Use the
-  strongest available model (Claude Opus class) when the diff's risk lies in
-  caller chains across files or in domain semantics (empty vs. absent).
-- **Judge**: the strongest available model (Claude Opus class). The required
-  searches trace past the diff into callers, libraries, and live config;
-  mid-tier judges skip them and disagree with each other on the same findings.
-- When the agent tool can't choose a model, both agents run on the session's
+- **Reviewer**: mid-tier (Claude Sonnet class) by default; the strongest
+  available (Claude Opus class) when the risk lies in caller chains across
+  files or in domain semantics (empty vs. absent).
+- **Design reviewer**: the strongest available. Its classes trace a value
+  across modules and into integrated systems' source; mid-tier design
+  reviewers stop at the declaration and raise questions the judge drops.
+- **Judge**: the strongest available. Its required searches trace past the
+  diff into callers, libraries, and live config; mid-tier judges skip them
+  and disagree with each other on the same findings.
+- When the agent tool can't choose a model, every agent runs on the session's
   model; run the review in a session on the strongest model available.
-- Context quality (Phase 0) matters more than model choice.
+- Phase 0 context matters more than model choice.
 
 ## Anti-Patterns
 
-- Skipping review because "it's simple"
-- Skipping the reviewer or judge because the diff is small ("overkill", "I
-  reviewed it myself", "checked the load-bearing claims myself")
+- Skipping the review, the reviewer, or the judge because the diff is small
+  or simple ("overkill", "I reviewed it myself", "checked the load-bearing
+  claims myself")
 - Answering "take another look" with an ad hoc read instead of a re-review
 - Ignoring confirmed findings
-- Coordinator inventing findings the reviewer didn't surface
-- Presenting unverified API suggestions ("use method X" without confirming X exists)
+- The coordinator inventing findings the reviewer didn't surface
+- Unverified API suggestions ("use method X" without confirming X exists)
 - Treating a confirmed mechanism as a confirmed finding
 - Severity or wording stronger than the VERIFIED claims
-- Changing a verdict on re-check without new evidence
-- A re-check that rewrites the review instead of listing changes
+- Changing a verdict on re-check without new evidence, or a re-check that
+  rewrites the review instead of listing changes
 
 ## Red Flags
 
-Any of these in a judge's ledger or the coordinator's output means a claim
+Each of these, in a judge's ledger or the coordinator's output, means a claim
 needs its citation found or its status set to UNCHECKED:
 
 - "I verified this myself", where only the mechanism was checked
