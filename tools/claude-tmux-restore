@@ -27,6 +27,7 @@ RESTORE_QUIET_SECONDS = 120
 SEP = "\t"
 PANE_FIELDS = [
     "session_name",
+    "session_group",
     "window_index",
     "window_id",
     "window_name",
@@ -141,8 +142,14 @@ def take_snapshot(socket: str | None, previous: dict | None = None) -> dict:
                 "model": model_from_args(args.get(pid, "")),
             }
 
+    # A window in several sessions (a session group, link-window) is listed once
+    # per session; record it once, under the session that names its group.
+    panes.sort(key=lambda p: p["session_group"] not in ("", p["session_name"]))
+    owner: dict[str, str] = {}
     windows: dict[tuple[str, int], dict] = {}
     for p in panes:
+        if owner.setdefault(p["window_id"], p["session_name"]) != p["session_name"]:
+            continue
         key = (p["session_name"], int(p["window_index"]))
         claude = claude_by_pane.get(p["pane_id"])
         current = windows.get(key)
@@ -163,9 +170,13 @@ def take_snapshot(socket: str | None, previous: dict | None = None) -> dict:
             ),
         }
 
+    # Don't carry a session that is now running in another window: restore
+    # would resume it twice.
+    live = {c["session_id"] for c in claude_by_pane.values()}
     for window in windows.values():
-        if not window["claude"] and window["id"] in carried:
-            window["claude"] = carried[window["id"]]
+        kept = carried.get(window["id"])
+        if not window["claude"] and kept and kept["session_id"] not in live:
+            window["claude"] = kept
 
     sessions: dict[str, list[dict]] = {}
     for (session_name, _), window in sorted(windows.items()):
@@ -192,12 +203,36 @@ def restore_in_progress(directory: Path) -> bool:
         return False
 
 
+def structure(snapshot: dict) -> list:
+    """What history is kept for: sessions, windows, names set by hand, Claude sessions.
+
+    A `cd` in an auto-renamed window changes only its name and cwd; recording each
+    one in history would push real layout changes out of the 20 kept.
+    """
+    return [
+        (
+            s["name"],
+            [
+                (
+                    w.get("id"),
+                    w["index"],
+                    None if w["automatic_rename"] else w["name"],
+                    (w["claude"] or {}).get("session_id"),
+                )
+                for w in s["windows"]
+            ],
+        )
+        for s in snapshot.get("sessions", [])
+    ]
+
+
 def write_snapshot(directory: Path, snapshot: dict, previous: dict | None) -> bool:
-    """Write snapshot.json if its content changed, keeping the old one in history."""
+    """Write snapshot.json if its content changed, keeping layout changes in history."""
     current = directory / "snapshot.json"
     if previous is not None:
         if {k: v for k, v in previous.items() if k != "taken"} == snapshot:
             return False
+    if previous is not None and structure(previous) != structure(snapshot):
         # Copy rather than move, so snapshot.json exists at every moment.
         history = directory / "history"
         history.mkdir(exist_ok=True)
@@ -269,54 +304,93 @@ def cmd_restore(opts) -> int:
     source = Path(opts.from_file) if opts.from_file else directory / "snapshot.json"
     data = json.loads(source.read_text())
     tmux = tmux_cmd(opts.socket)
+    if restore_in_progress(directory) and not (opts.force or opts.dry_run):
+        # Sessions the last run typed may not be listed by `claude agents` yet,
+        # so a second run now would resume them again.
+        print(
+            f"a restore ran less than {RESTORE_QUIET_SECONDS}s ago; wait, or pass --force",
+            file=sys.stderr,
+        )
+        return 1
 
     try:
         running = {s["sessionId"] for s in interactive_claude_sessions()}
     except Exception as e:  # noqa: BLE001
         print(f"cannot list running Claude sessions ({e}); refusing to restore", file=sys.stderr)
         return 1
+    # Windows already open, so running restore again (or --from after a default
+    # restore) doesn't open a second copy of a plain shell.
+    present: set[tuple[str, str, str]] = set()
     try:
-        existing = set(run(tmux + ["list-sessions", "-F", "#{session_name}"]).split("\n"))
+        listing = run(tmux + ["list-windows", "-a", "-F", SEP.join(["#{session_name}", "#{window_name}", "#{pane_current_path}"])])
+        for line in listing.splitlines():
+            parts = line.split(SEP)
+            if len(parts) == 3:
+                present.add((parts[0], parts[1], os.path.realpath(parts[2])))
     except subprocess.CalledProcessError:
-        existing = set()
+        pass
+    existing = {session for session, _, _ in present}
 
     if not opts.dry_run:
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "restoring").touch()
 
-    def execute(cmd: list[str]) -> str:
+    def execute(cmd: list[str], fallback: list[str] | None = None) -> str:
         if opts.dry_run:
             print(shlex.join(cmd))
-            return "<new-window>"
-        return run(cmd).strip()
+            return "<new-window> <index>"
+        try:
+            return run(cmd).strip()
+        except subprocess.CalledProcessError:
+            if fallback is None:
+                raise
+            return run(fallback).strip()
 
-    counts = {"sessions": 0, "windows": 0, "resumed": 0, "running": 0}
+    counts = {"sessions": 0, "windows": 0, "resumed": 0, "running": 0, "present": 0}
     for session in data["sessions"]:
         name = session["name"]
+        created_here = name not in existing
+        active = None
         for window in session["windows"]:
             claude = window["claude"]
             if claude and claude["session_id"] in running:
                 counts["running"] += 1
                 continue
-            create = ["-P", "-F", "#{window_id}", "-n", window["name"], "-c", window["cwd"]]
+            if not claude and (name, window["name"], os.path.realpath(window["cwd"])) in present:
+                counts["present"] += 1
+                continue
+            create = ["-P", "-F", "#{window_id} #{window_index}", "-n", window["name"], "-c", window["cwd"]]
+            target = f"={name}:{window['index']}"
             if name not in existing:
-                window_id = execute(tmux + ["new-session", "-d", "-s", name] + create)
+                window_id, index = execute(tmux + ["new-session", "-d", "-s", name] + create).split()
                 existing.add(name)
                 counts["sessions"] += 1
+                if not opts.dry_run and index != str(window["index"]):
+                    execute(tmux + ["move-window", "-s", window_id, "-t", target])
             else:
-                window_id = execute(tmux + ["new-window", "-d", "-t", f"={name}:"] + create)
+                # The recorded index may be taken in a session that already exists.
+                window_id, _ = execute(
+                    tmux + ["new-window", "-d", "-t", target] + create,
+                    fallback=tmux + ["new-window", "-d", "-t", f"={name}:"] + create,
+                ).split()
             counts["windows"] += 1
+            if window.get("active"):
+                active = window_id
             # -n turns automatic-rename off; put back what the window had.
             if window["automatic_rename"]:
                 execute(tmux + ["set-option", "-w", "-t", window_id, "automatic-rename", "on"])
             if claude:
                 execute(tmux + ["send-keys", "-t", window_id, resume_command(claude), "Enter"])
+                running.add(claude["session_id"])
                 counts["resumed"] += 1
+        if created_here and active:
+            execute(tmux + ["select-window", "-t", active])
 
     prefix = "dry run: " if opts.dry_run else ""
     print(
         f"{prefix}{counts['sessions']} sessions and {counts['windows']} windows created, "
-        f"{counts['resumed']} Claude sessions resumed, {counts['running']} skipped (already running)"
+        f"{counts['resumed']} Claude sessions resumed, {counts['running']} skipped (already running), "
+        f"{counts['present']} skipped (already open)"
     )
     return 0
 
@@ -330,6 +404,7 @@ def main() -> int:
     restore = sub.add_parser("restore", help="rebuild the layout and resume Claude sessions")
     restore.add_argument("--from", dest="from_file", help="snapshot file to restore (default: latest)")
     restore.add_argument("--dry-run", action="store_true", help="print the tmux commands instead of running them")
+    restore.add_argument("--force", action="store_true", help="run even if another restore ran in the last two minutes")
     opts = parser.parse_args()
     return {"snapshot": cmd_snapshot, "list": cmd_list, "restore": cmd_restore}[opts.command](opts)
 

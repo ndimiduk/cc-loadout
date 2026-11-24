@@ -136,8 +136,11 @@ Code session that was running in each window, in its directory and on its model.
 interactive Claude process to its pane by walking up the process tree, and writes
 `~/.local/state/cc-loadout/tmux-restore/snapshot.json` (`$XDG_STATE_HOME` and
 `$CC_RESTORE_DIR` override the location). Windows without Claude are recorded too
-and come back as a shell in their directory. A snapshot is written only when the
-layout changed; the previous 20 are kept in `history/`.
+and come back as a shell in their directory. A snapshot is written only when
+something changed; the previous 20 layouts are kept in `history/` (a `cd` that
+only renames an auto-named window updates the snapshot without using a history
+slot). A window shared by several sessions (a session group, `link-window`) is
+recorded once, under the session that names its group.
 
 Snapshots are taken on events rather than on a timer: tmux hooks for session and
 window creation, renames, moves and closes, and a Claude SessionStart hook for
@@ -156,10 +159,15 @@ claude-tmux-restore restore --from ~/.local/state/cc-loadout/tmux-restore/histor
 ```
 
 `restore` types `claude --resume <id> --model <model>` into each new window's
-shell, so a shell alias or wrapper for `claude` applies. It skips Claude sessions
-that are already running, adds windows to tmux sessions that already exist, and
-suppresses snapshots for two minutes so the half-built layout doesn't replace the
-one being restored. Background sessions (`claude --bg`) are not covered.
+shell, so a shell alias or wrapper for `claude` applies. Windows keep their
+recorded index (falling back to the next free one in a session that already has
+it) and each new session's active window is reselected. It skips Claude sessions
+that are already running and plain-shell windows already open with the same name
+and directory, adds windows to tmux sessions that already exist, and suppresses
+snapshots for two minutes so the half-built layout doesn't replace the one being
+restored. A second `restore` within those two minutes refuses unless `--force`,
+since the sessions the first one typed may not be listed as running yet.
+Background sessions (`claude --bg`) are not covered.
 
 ### Install
 
