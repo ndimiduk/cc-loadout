@@ -33,5 +33,11 @@ case "$1" in
     esac ;;
   clear)
     tmux set -wu -t "$TMUX_PANE" @cc 2>/dev/null ;;
+  start)
+    # Refresh the restore snapshot once this session is listed by `claude
+    # agents`; the delay covers registration. Backgrounded by tmux, so the hook
+    # returns at once.
+    here=$(cd "$(dirname "$0")" && pwd)
+    tmux run -b -d 3 "'$here/claude-tmux-restore' snapshot" 2>/dev/null ;;
 esac
 exit 0

@@ -127,7 +127,62 @@ setw -g window-status-current-format '#I#{?#{==:#{@cc},wait},?,#{?#{==:#{@cc},do
 set-hook -g session-window-changed 'if -F "#{||:#{==:#{@cc},wait},#{==:#{@cc},done}}" "set -wu @cc"'
 ```
 
+## claude-tmux-restore
+
+Rebuilds tmux sessions and windows after a restart or crash and resumes the Claude
+Code session that was running in each window, in its directory and on its model.
+
+`snapshot` joins `tmux list-panes -a` with `claude agents --json`, matching each
+interactive Claude process to its pane by walking up the process tree, and writes
+`~/.local/state/cc-loadout/tmux-restore/snapshot.json` (`$XDG_STATE_HOME` and
+`$CC_RESTORE_DIR` override the location). Windows without Claude are recorded too
+and come back as a shell in their directory. A snapshot is written only when the
+layout changed; the previous 20 are kept in `history/`.
+
+Snapshots are taken on events rather than on a timer: tmux hooks for session and
+window creation, renames, moves and closes, and a Claude SessionStart hook for
+`/resume`, `/clear` and new sessions. No hook fires on SessionEnd, so sessions
+exiting during a shutdown don't empty the snapshot; a window you close does drop
+out of the next one. Errors are logged to `snapshot.log` in the same directory and
+never shown in a pane.
+
+```
+claude-tmux-restore restore --dry-run   # print the tmux commands
+claude-tmux-restore restore             # rebuild and resume
+claude-tmux-restore list                # current snapshot and history
+claude-tmux-restore restore --from ~/.local/state/cc-loadout/tmux-restore/history/snapshot-….json
+```
+
+`restore` types `claude --resume <id> --model <model>` into each new window's
+shell, so a shell alias or wrapper for `claude` applies. It skips Claude sessions
+that are already running, adds windows to tmux sessions that already exist, and
+suppresses snapshots for two minutes so the half-built layout doesn't replace the
+one being restored. Background sessions (`claude --bg`) are not covered.
+
+### Install
+
+Add a SessionStart hook group to `~/.claude/settings.json`, using the
+`claude-tmux-state` hooks above:
+
+```json
+"SessionStart": [{ "matcher": "startup|resume|clear|compact", "hooks": [{ "type": "command", "timeout": 5, "command": "/path/to/cc-loadout/tools/claude-tmux-state start" }] }]
+```
+
+Then in `~/.tmux.conf`:
+
+```tmux
+set-hook -g 'session-created[10]' "run -b '/path/to/cc-loadout/tools/claude-tmux-restore snapshot'"
+set-hook -g 'session-closed[10]'  "run -b '/path/to/cc-loadout/tools/claude-tmux-restore snapshot'"
+set-hook -g 'session-renamed[10]' "run -b '/path/to/cc-loadout/tools/claude-tmux-restore snapshot'"
+set-hook -g 'window-linked[10]'   "run -b '/path/to/cc-loadout/tools/claude-tmux-restore snapshot'"
+set-hook -g 'window-renamed[10]'  "run -b '/path/to/cc-loadout/tools/claude-tmux-restore snapshot'"
+set-hook -g 'window-closed[10]'   "run -b '/path/to/cc-loadout/tools/claude-tmux-restore snapshot'"
+```
+
+The `[10]` index keeps these from replacing other hooks on the same events.
+
 ## Requirements
 
-- Python 3.10+ (claude-tmux-state: POSIX `sh` and tmux)
+- Python 3.10+ (claude-tmux-state: POSIX `sh` and tmux; claude-tmux-restore also runs on 3.9)
+- claude-tmux-restore: tmux 3.x and a Claude Code with `claude agents --json`
 - No third-party dependencies
