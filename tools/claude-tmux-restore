@@ -28,6 +28,7 @@ SEP = "\t"
 PANE_FIELDS = [
     "session_name",
     "window_index",
+    "window_id",
     "window_name",
     "window_active",
     "automatic-rename",
@@ -98,7 +99,30 @@ def list_panes(socket: str | None) -> list[dict]:
     return panes
 
 
-def take_snapshot(socket: str | None) -> dict:
+def server_identity(socket: str | None) -> str:
+    # Window ids restart at @0 with each server, so they only identify a window
+    # across snapshots taken from the same server.
+    return run(tmux_cmd(socket) + ["display", "-p", "#{pid}:#{start_time}"]).strip()
+
+
+def carried_claude(previous: dict | None, server: str) -> dict[str, dict]:
+    """Claude sessions from the previous snapshot of this server, by window id."""
+    if not previous or previous.get("server") != server:
+        return {}
+    return {
+        w["id"]: w["claude"]
+        for s in previous.get("sessions", [])
+        for w in s["windows"]
+        if w.get("id") and w.get("claude")
+    }
+
+
+def take_snapshot(socket: str | None, previous: dict | None = None) -> dict:
+    server = server_identity(socket)
+    # A window whose Claude process has exited keeps its last session: during a
+    # shutdown, Claude often exits before its window closes, and the snapshot
+    # must still resume it. A window that closes drops out.
+    carried = carried_claude(previous, server)
     panes = list_panes(socket)
     parent, args = process_table()
     pane_by_pid = {int(p["pane_pid"]): p for p in panes}
@@ -126,6 +150,7 @@ def take_snapshot(socket: str | None) -> dict:
         if current and (current["claude"] or (not claude and p["pane_active"] != "1")):
             continue
         windows[key] = {
+            "id": p["window_id"],
             "index": key[1],
             "name": p["window_name"],
             "active": p["window_active"] == "1",
@@ -138,13 +163,25 @@ def take_snapshot(socket: str | None) -> dict:
             ),
         }
 
+    for window in windows.values():
+        if not window["claude"] and window["id"] in carried:
+            window["claude"] = carried[window["id"]]
+
     sessions: dict[str, list[dict]] = {}
     for (session_name, _), window in sorted(windows.items()):
         sessions.setdefault(session_name, []).append(window)
     return {
         "version": 1,
+        "server": server,
         "sessions": [{"name": n, "windows": w} for n, w in sessions.items()],
     }
+
+
+def read_snapshot(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
 
 
 def restore_in_progress(directory: Path) -> bool:
@@ -155,21 +192,17 @@ def restore_in_progress(directory: Path) -> bool:
         return False
 
 
-def write_snapshot(directory: Path, snapshot: dict) -> bool:
-    """Write snapshot.json if its content changed, rotating the old one into history."""
+def write_snapshot(directory: Path, snapshot: dict, previous: dict | None) -> bool:
+    """Write snapshot.json if its content changed, keeping the old one in history."""
     current = directory / "snapshot.json"
-    if current.exists():
-        try:
-            previous = json.loads(current.read_text())
-            previous.pop("taken", None)
-            if previous == snapshot:
-                return False
-        except ValueError:
-            pass
+    if previous is not None:
+        if {k: v for k, v in previous.items() if k != "taken"} == snapshot:
+            return False
+        # Copy rather than move, so snapshot.json exists at every moment.
         history = directory / "history"
         history.mkdir(exist_ok=True)
         stamp = datetime.datetime.fromtimestamp(current.stat().st_mtime)
-        current.replace(history / f"snapshot-{stamp:%Y%m%dT%H%M%S.%f}.json")
+        shutil.copy2(current, history / f"snapshot-{stamp:%Y%m%dT%H%M%S.%f}.json")
         for old in sorted(history.glob("snapshot-*.json"))[:-HISTORY_KEEP]:
             old.unlink()
     record = {**snapshot, "taken": datetime.datetime.now().astimezone().isoformat()}
@@ -191,10 +224,11 @@ def cmd_snapshot(opts) -> int:
             fcntl.flock(lock, fcntl.LOCK_EX)
             if restore_in_progress(directory):
                 return 0
-            snapshot = take_snapshot(opts.socket)
+            previous = read_snapshot(directory / "snapshot.json")
+            snapshot = take_snapshot(opts.socket, previous)
             if not snapshot["sessions"]:
                 return 0
-            write_snapshot(directory, snapshot)
+            write_snapshot(directory, snapshot, previous)
     except Exception as e:  # noqa: BLE001 - hook context, see above
         try:
             with open(directory / "snapshot.log", "a") as log:

@@ -141,10 +141,12 @@ layout changed; the previous 20 are kept in `history/`.
 
 Snapshots are taken on events rather than on a timer: tmux hooks for session and
 window creation, renames, moves and closes, and a Claude SessionStart hook for
-`/resume`, `/clear` and new sessions. No hook fires on SessionEnd, so sessions
-exiting during a shutdown don't empty the snapshot; a window you close does drop
-out of the next one. Errors are logged to `snapshot.log` in the same directory and
-never shown in a pane.
+`/resume`, `/clear` and new sessions. A window keeps its last Claude session after
+Claude exits, so quitting Claude before closing windows during a shutdown doesn't
+lose it (and a window where you quit Claude on purpose resumes it on restore). A
+window you close drops out of the next snapshot; if a teardown closed windows you
+wanted back, `list` and `restore --from` recover an earlier one. Errors are logged
+to `snapshot.log` in the same directory and never shown in a pane.
 
 ```
 claude-tmux-restore restore --dry-run   # print the tmux commands
