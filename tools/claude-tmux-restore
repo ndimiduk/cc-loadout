@@ -10,6 +10,7 @@ SessionStart hook rather than polling; see tools/README.md.
 from __future__ import annotations
 
 import argparse
+import collections
 import datetime
 import fcntl
 import json
@@ -27,6 +28,7 @@ RESTORE_QUIET_SECONDS = 120
 SEP = "\t"
 PANE_FIELDS = [
     "session_name",
+    "session_id",
     "session_group",
     "window_index",
     "window_id",
@@ -143,8 +145,15 @@ def take_snapshot(socket: str | None, previous: dict | None = None) -> dict:
             }
 
     # A window in several sessions (a session group, link-window) is listed once
-    # per session; record it once, under the session that names its group.
-    panes.sort(key=lambda p: p["session_group"] not in ("", p["session_name"]))
+    # per session; record it once, under the session that names its group, or
+    # the oldest one ($N ids are assigned in creation order). tmux keeps a group's
+    # name after its first session is renamed or killed.
+    panes.sort(
+        key=lambda p: (
+            p["session_group"] not in ("", p["session_name"]),
+            int(p["session_id"].lstrip("$") or 0),
+        )
+    )
     owner: dict[str, str] = {}
     windows: dict[tuple[str, int], dict] = {}
     for p in panes:
@@ -320,13 +329,13 @@ def cmd_restore(opts) -> int:
         return 1
     # Windows already open, so running restore again (or --from after a default
     # restore) doesn't open a second copy of a plain shell.
-    present: set[tuple[str, str, str]] = set()
+    present: collections.Counter[tuple[str, str, str]] = collections.Counter()
     try:
         listing = run(tmux + ["list-windows", "-a", "-F", SEP.join(["#{session_name}", "#{window_name}", "#{pane_current_path}"])])
         for line in listing.splitlines():
             parts = line.split(SEP)
             if len(parts) == 3:
-                present.add((parts[0], parts[1], os.path.realpath(parts[2])))
+                present[(parts[0], parts[1], os.path.realpath(parts[2]))] += 1
     except subprocess.CalledProcessError:
         pass
     existing = {session for session, _, _ in present}
@@ -356,7 +365,11 @@ def cmd_restore(opts) -> int:
             if claude and claude["session_id"] in running:
                 counts["running"] += 1
                 continue
-            if not claude and (name, window["name"], os.path.realpath(window["cwd"])) in present:
+            here = (name, window["name"], os.path.realpath(window["cwd"]))
+            # Each open window stands in for one recorded window, so three
+            # identical shells don't all match a single open one.
+            if not claude and present[here] > 0:
+                present[here] -= 1
                 counts["present"] += 1
                 continue
             create = ["-P", "-F", "#{window_id} #{window_index}", "-n", window["name"], "-c", window["cwd"]]

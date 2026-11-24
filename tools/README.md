@@ -139,8 +139,9 @@ interactive Claude process to its pane by walking up the process tree, and write
 and come back as a shell in their directory. A snapshot is written only when
 something changed; the previous 20 layouts are kept in `history/` (a `cd` that
 only renames an auto-named window updates the snapshot without using a history
-slot). A window shared by several sessions (a session group, `link-window`) is
-recorded once, under the session that names its group.
+slot). A window shared by several sessions is recorded once: under the session
+that names its group (or the group's oldest session), and a `link-window` window
+under one of the sessions it is linked into.
 
 Snapshots are taken on events rather than on a timer: tmux hooks for session and
 window creation, renames, moves and closes, and a Claude SessionStart hook for
