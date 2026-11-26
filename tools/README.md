@@ -243,13 +243,17 @@ PR URLs are compared in one canonical form (lower case, no trailing path), in
 
 ```json
 {"pr": "https://github.com/o/r/pull/1", "head": "abc123",
- "events": [{"kind": "ci_failure", "key": "ci:abc123:build:8812", "slot": "ci:build", "head": "abc123",
+ "events": [{"kind": "ci_failure", "key": "ci:abc123:build:8812:2026-11-26T10:58:00Z", "slot": "ci:build", "head": "abc123",
              "data": {"check": "build"}}]}
 ```
 
-Each result needs its own `key` (here the check run's id), so a re-run on the
-same head is a new event that replaces the last one in its slot. `slot` and
-`head` are optional; an empty string for either is rejected.
+A `key` already recorded is ignored, so it must change whenever the reported
+result does. A check run's id alone is not enough: a run reports several states
+over its life, and a re-requested run can be updated in place. The example keys
+on the run's id and its completion time. Within a slot the event recorded last
+wins, and within one line that is the later entry in `events`, so list a slot's
+results oldest first. `slot` and `head` are optional; an empty string for either
+is rejected.
 
 No real event source is wired up yet; events come only from `ingest`.
 

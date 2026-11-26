@@ -325,7 +325,7 @@ def cmd_ingest(opts) -> int:
     {"pr": URL, "head": SHA, "events": [{"kind", "key", "slot"?, "head"?, "data"?}]}
 
     `key` identifies the event within its PR, so re-observing it is a no-op.
-    Every line about a PR not seen before this run is its baseline.
+    Events in the run that first records a PR are its baseline.
     """
     conn = connect()
     introduced = set()
