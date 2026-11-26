@@ -222,10 +222,13 @@ Events are edge-detected and level-delivered:
   head does not wake anyone.
 - Reading a merge or close unsubscribes the session from that PR.
 
-Only `changes_requested`, `review_comment` (an inline diff comment),
-`issue_comment` (a comment on the PR conversation, where some CI automation
-reports instead of using checks), `ci_failure` and `conflict` ring the doorbell;
-other kinds wait in the inbox. When a session exits, the next ring
+Only `changes_requested`, `review_comment` (an inline comment on the diff),
+`issue_comment`, `ci_failure` and `conflict` ring the doorbell; other kinds wait
+in the inbox. `issue_comment` is any top-level comment on the PR: a
+conversation comment, or the non-empty body of a review left as a plain comment.
+Some CI automation reports this way instead of through checks. Keep a review
+body out of its reviewer's verdict slot, so a comment doesn't replace an
+earlier change request. When a session exits, the next ring
 finds its socket gone and unregisters it, keeping its subscriptions; when it is
 resumed, `register` records the new socket and the next ingest rings it for
 anything it missed.
