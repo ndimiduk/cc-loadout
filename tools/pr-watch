@@ -1,0 +1,372 @@
+#!/usr/bin/env python3
+"""Deliver pull request events to the Claude Code sessions watching them.
+
+Sessions subscribe to PRs; an event source writes what it observes into a
+SQLite inbox, and each session with new wake-worthy events gets a payload-free
+doorbell message on its messaging socket telling it to read the inbox. The
+inbox is the source of truth, so a lost or repeated doorbell is harmless. See
+tools/README.md.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import datetime
+import json
+import os
+import shlex
+import socket
+import sqlite3
+import sys
+import time
+import traceback
+from pathlib import Path
+
+SCHEMA_VERSION = 1
+SCHEMA = """
+CREATE TABLE sessions (
+    session_id TEXT PRIMARY KEY,
+    socket     TEXT,
+    rung_seq   INTEGER NOT NULL DEFAULT 0,
+    last_seen  REAL NOT NULL
+);
+CREATE TABLE subscriptions (
+    session_id TEXT NOT NULL,
+    pr_url     TEXT NOT NULL,
+    from_seq   INTEGER NOT NULL,
+    added_at   REAL NOT NULL,
+    PRIMARY KEY (session_id, pr_url)
+);
+CREATE TABLE prs (
+    pr_url      TEXT PRIMARY KEY,
+    head        TEXT,
+    observed_at REAL NOT NULL
+);
+CREATE TABLE events (
+    seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+    pr_url      TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    natural_key TEXT NOT NULL,
+    slot        TEXT,
+    head        TEXT,
+    data        TEXT NOT NULL,
+    baseline    INTEGER NOT NULL,
+    observed_at REAL NOT NULL,
+    UNIQUE (pr_url, natural_key)
+);
+CREATE TABLE deliveries (
+    session_id   TEXT NOT NULL,
+    seq          INTEGER NOT NULL,
+    delivered_at REAL NOT NULL,
+    PRIMARY KEY (session_id, seq)
+);
+"""
+
+WAKE_KINDS = {"changes_requested", "review_comment", "ci_failure", "conflict"}
+TERMINAL_KINDS = {"merged", "closed"}
+SOCKET_TIMEOUT = 2.0
+
+# Undelivered events on a session's subscribed PRs that are still current. An
+# event is superseded when it is about a head the PR has moved past, or when a
+# newer event about the current head fills the same slot (a CI result replaced
+# by a re-run, a reviewer's earlier verdict). Events seen on a PR's first
+# observation, or before the session subscribed, are history, not news.
+PENDING = """
+SELECT e.seq, e.pr_url, e.kind, e.data,
+       (e.head IS NULL OR p.head IS NULL OR e.head = p.head)
+       AND (e.slot IS NULL OR e.seq = (
+            SELECT MAX(x.seq) FROM events x
+            WHERE x.pr_url = e.pr_url AND x.slot = e.slot
+              AND (x.head IS NULL OR p.head IS NULL OR x.head = p.head)
+       )) AS live
+FROM events e
+JOIN subscriptions s ON s.pr_url = e.pr_url AND s.session_id = :session
+LEFT JOIN prs p ON p.pr_url = e.pr_url
+WHERE e.seq > s.from_seq AND NOT e.baseline
+  AND NOT EXISTS (
+      SELECT 1 FROM deliveries d WHERE d.session_id = :session AND d.seq = e.seq
+  )
+ORDER BY e.seq
+"""
+
+
+def state_dir() -> Path:
+    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local/state")
+    return Path(base) / "cc-loadout" / "pr-watch"
+
+
+def db_path() -> Path:
+    if os.environ.get("PR_WATCH_DB"):
+        return Path(os.environ["PR_WATCH_DB"])
+    return state_dir() / "inbox.db"
+
+
+def connect() -> sqlite3.Connection:
+    path = db_path()
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    old = os.umask(0o077)
+    try:
+        # Autocommit; transactions are explicit BEGIN IMMEDIATE so concurrent
+        # writers (poller, hooks, CLI) serialize instead of failing to upgrade.
+        conn = sqlite3.connect(str(path), timeout=10, isolation_level=None)
+    finally:
+        os.umask(old)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=10000")
+    if conn.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+        with transaction(conn):
+            if conn.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+                for statement in SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+                conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+    return conn
+
+
+@contextlib.contextmanager
+def transaction(conn: sqlite3.Connection):
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    conn.execute("COMMIT")
+
+
+def log(message: str) -> None:
+    try:
+        path = db_path().parent / "pr-watch.log"
+        with open(path, "a") as f:
+            f.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} {message}\n")
+    except OSError:
+        pass
+
+
+def current_session(opts) -> str:
+    session = opts.session or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not session:
+        raise SystemExit("no session: pass --session or run inside a Claude Code session")
+    return session
+
+
+def pending(conn: sqlite3.Connection, session: str) -> list[sqlite3.Row]:
+    return conn.execute(PENDING, {"session": session}).fetchall()
+
+
+def doorbell_text(count: int) -> str:
+    me = shlex.quote(str(Path(sys.argv[0]).resolve()))
+    noun = "event" if count == 1 else "events"
+    return (
+        f"pr-watch: {count} new {noun} on pull requests this session subscribed to. "
+        f"Run `{me} inbox` to read them, then act on each one."
+    )
+
+
+def send(sock_path: str, text: str) -> None:
+    line = json.dumps({"type": "user", "message": {"role": "user", "content": text}}) + "\n"
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.settimeout(SOCKET_TIMEOUT)
+        s.connect(sock_path)
+        s.sendall(line.encode())
+
+
+def ring(conn: sqlite3.Connection) -> list[str]:
+    """Ring each session with live wake-worthy events newer than its last ring."""
+    rung = []
+    for row in conn.execute("SELECT session_id, socket, rung_seq FROM sessions WHERE socket IS NOT NULL").fetchall():
+        live = [e for e in pending(conn, row["session_id"]) if e["live"]]
+        wake = [e["seq"] for e in live if e["kind"] in WAKE_KINDS and e["seq"] > row["rung_seq"]]
+        if not wake:
+            continue
+        try:
+            send(row["socket"], doorbell_text(len(live)))
+        except (FileNotFoundError, ConnectionRefusedError):
+            # The session exited; its next SessionStart registers a new socket
+            # and keeps its subscriptions.
+            with transaction(conn):
+                conn.execute(
+                    "UPDATE sessions SET socket = NULL WHERE session_id = ? AND socket = ?",
+                    (row["session_id"], row["socket"]),
+                )
+            log(f"ring {row['session_id']}: socket gone, unregistered")
+            continue
+        except OSError as e:
+            log(f"ring {row['session_id']}: {e!r}, will retry")
+            continue
+        with transaction(conn):
+            conn.execute(
+                "UPDATE sessions SET rung_seq = MAX(rung_seq, ?) WHERE session_id = ?",
+                (max(wake), row["session_id"]),
+            )
+        rung.append(row["session_id"])
+    return rung
+
+
+def cmd_register(opts) -> int:
+    """SessionStart hook: record this session's messaging socket. Never fails."""
+    try:
+        session = opts.session
+        if not session and not sys.stdin.isatty():
+            with contextlib.suppress(ValueError):
+                session = json.loads(sys.stdin.read() or "{}").get("session_id")
+        session = session or os.environ.get("CLAUDE_CODE_SESSION_ID")
+        sock = opts.socket or os.environ.get("CLAUDE_CODE_MESSAGING_SOCKET")
+        if not session or not sock:
+            log(f"register: missing session ({session!r}) or socket ({sock!r})")
+            return 0
+        conn = connect()
+        with transaction(conn):
+            # A new socket means a new process, which has not heard any ring.
+            conn.execute(
+                """INSERT INTO sessions (session_id, socket, rung_seq, last_seen) VALUES (?, ?, 0, ?)
+                   ON CONFLICT (session_id) DO UPDATE SET
+                     rung_seq = CASE WHEN socket IS excluded.socket THEN rung_seq ELSE 0 END,
+                     socket = excluded.socket, last_seen = excluded.last_seen""",
+                (session, sock, time.time()),
+            )
+    except Exception:
+        log("register failed:\n" + traceback.format_exc())
+    return 0
+
+
+def cmd_add(opts) -> int:
+    session = current_session(opts)
+    conn = connect()
+    with transaction(conn):
+        top = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()[0]
+        for url in opts.pr:
+            conn.execute(
+                "INSERT OR IGNORE INTO subscriptions (session_id, pr_url, from_seq, added_at) VALUES (?, ?, ?, ?)",
+                (session, url, top, time.time()),
+            )
+    return 0
+
+
+def cmd_rm(opts) -> int:
+    session = current_session(opts)
+    conn = connect()
+    with transaction(conn):
+        for url in opts.pr:
+            conn.execute("DELETE FROM subscriptions WHERE session_id = ? AND pr_url = ?", (session, url))
+    return 0
+
+
+def cmd_list(opts) -> int:
+    conn = connect()
+    if opts.all:
+        rows = conn.execute("SELECT session_id, pr_url FROM subscriptions ORDER BY session_id, added_at").fetchall()
+        for row in rows:
+            print(f"{row['session_id']}\t{row['pr_url']}")
+    else:
+        session = current_session(opts)
+        for row in conn.execute(
+            "SELECT pr_url FROM subscriptions WHERE session_id = ? ORDER BY added_at", (session,)
+        ).fetchall():
+            print(row["pr_url"])
+    return 0
+
+
+def cmd_ingest(opts) -> int:
+    """Record source observations, one JSON object per line, then ring.
+
+    {"pr": URL, "head": SHA, "events": [{"kind", "key", "slot"?, "head"?, "data"?}]}
+
+    `key` identifies the event within its PR, so re-observing it is a no-op.
+    """
+    conn = connect()
+    added = 0
+    for lineno, line in enumerate(sys.stdin, 1):
+        if not line.strip():
+            continue
+        try:
+            obs = json.loads(line)
+            url = obs["pr"]
+            events = obs.get("events", [])
+            for e in events:
+                e["kind"], e["key"]
+        except (ValueError, KeyError, TypeError) as e:
+            print(f"line {lineno}: skipped, {e!r}", file=sys.stderr)
+            continue
+        now = time.time()
+        with transaction(conn):
+            first = conn.execute("SELECT 1 FROM prs WHERE pr_url = ?", (url,)).fetchone() is None
+            conn.execute(
+                """INSERT INTO prs (pr_url, head, observed_at) VALUES (?, ?, ?)
+                   ON CONFLICT (pr_url) DO UPDATE SET
+                     head = COALESCE(excluded.head, head), observed_at = excluded.observed_at""",
+                (url, obs.get("head"), now),
+            )
+            for e in events:
+                cur = conn.execute(
+                    """INSERT OR IGNORE INTO events
+                       (pr_url, kind, natural_key, slot, head, data, baseline, observed_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (url, e["kind"], str(e["key"]), e.get("slot"), e.get("head"),
+                     json.dumps(e.get("data", {})), int(first), now),
+                )
+                added += cur.rowcount
+    rung = ring(conn)
+    print(f"{added} new events, rang {len(rung)} sessions")
+    return 0
+
+
+def cmd_inbox(opts) -> int:
+    session = current_session(opts)
+    conn = connect()
+    with transaction(conn):
+        rows = pending(conn, session)
+        live = [r for r in rows if r["live"]]
+        if not opts.peek:
+            now = time.time()
+            conn.executemany(
+                "INSERT OR IGNORE INTO deliveries (session_id, seq, delivered_at) VALUES (?, ?, ?)",
+                [(session, r["seq"], now) for r in rows],
+            )
+            for url in {r["pr_url"] for r in live if r["kind"] in TERMINAL_KINDS}:
+                conn.execute("DELETE FROM subscriptions WHERE session_id = ? AND pr_url = ?", (session, url))
+    if not live:
+        print("No new PR events.")
+        return 0
+    by_pr: dict[str, list[sqlite3.Row]] = {}
+    for r in live:
+        by_pr.setdefault(r["pr_url"], []).append(r)
+    for url, events in by_pr.items():
+        print(url)
+        for r in events:
+            data = json.loads(r["data"])
+            detail = f" {json.dumps(data)}" if data else ""
+            print(f"  {r['kind']}{detail}")
+    print("\nEvents are what the watcher observed; re-read the PR for current state before acting.")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--session", help="Claude session id (default: $CLAUDE_CODE_SESSION_ID)")
+    sub = parser.add_subparsers(dest="command", required=True)
+    reg = sub.add_parser("register", help="record this session's messaging socket (SessionStart hook)")
+    reg.add_argument("--socket", help="messaging socket (default: $CLAUDE_CODE_MESSAGING_SOCKET)")
+    for name, helptext in (("add", "subscribe to PRs"), ("rm", "unsubscribe from PRs")):
+        p = sub.add_parser(name, help=helptext)
+        p.add_argument("pr", nargs="+", help="pull request URL")
+    lst = sub.add_parser("list", help="show this session's subscriptions")
+    lst.add_argument("--all", action="store_true", help="every session's subscriptions")
+    sub.add_parser("ingest", help="record source observations from stdin (JSON lines) and ring sessions")
+    inbox = sub.add_parser("inbox", help="show new events and mark them read")
+    inbox.add_argument("--peek", action="store_true", help="don't mark them read")
+    opts = parser.parse_args()
+    return {
+        "register": cmd_register,
+        "add": cmd_add,
+        "rm": cmd_rm,
+        "list": cmd_list,
+        "ingest": cmd_ingest,
+        "inbox": cmd_inbox,
+    }[opts.command](opts)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

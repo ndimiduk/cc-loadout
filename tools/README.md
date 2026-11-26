@@ -192,8 +192,71 @@ set-hook -g 'window-closed[10]'   "run -b '/path/to/cc-loadout/tools/claude-tmux
 
 The `[10]` index keeps these from replacing other hooks on the same events.
 
+## pr-watch
+
+Delivers pull request events (reviews, comments, CI results, conflicts, merges)
+to the Claude Code sessions that subscribed to the PR, waking an idle session
+without an LLM polling. A session subscribes with `pr-watch add <pr-url>`; an
+event source records what it observes with `pr-watch ingest`; each session with
+new wake-worthy events gets a one-line doorbell message on its messaging socket
+(`$CLAUDE_CODE_MESSAGING_SOCKET`) telling it to run `pr-watch inbox`. The message
+carries no event data, so a lost or repeated doorbell is harmless.
+
+The inbox is one SQLite database,
+`~/.local/state/cc-loadout/pr-watch/inbox.db` (`$XDG_STATE_HOME` and
+`$PR_WATCH_DB` override it), in WAL mode with every write in a transaction, so
+the source, hooks and CLI can write concurrently. Many sessions can watch one PR,
+and one session many PRs.
+
+Events are edge-detected and level-delivered:
+
+- An event is recorded once per natural key (`key`, unique within its PR), so a
+  source can report the same review or check result on every poll.
+- Events seen on a PR's first observation, or before a session subscribed, are
+  history and are never delivered.
+- `inbox` shows only events that are still current. An event about a head the PR
+  has moved past is superseded, and so is one whose `slot` (say `ci`, or
+  `review:<login>`) has a newer event on the current head. A CI failure on an
+  old head reported after a success on the new head does not wake anyone.
+- Reading a merge or close unsubscribes the session from that PR.
+
+Only `changes_requested`, `review_comment`, `ci_failure` and `conflict` ring the
+doorbell; other kinds wait in the inbox. When a session exits, the next ring
+finds its socket gone and unregisters it, keeping its subscriptions; when it is
+resumed, `register` records the new socket and the next ingest rings it for
+anything it missed.
+
+```
+pr-watch add https://github.com/o/r/pull/1   # this session ($CLAUDE_CODE_SESSION_ID)
+pr-watch list [--all]
+pr-watch inbox [--peek]
+pr-watch rm https://github.com/o/r/pull/1
+```
+
+`ingest` reads one JSON object per line on stdin: a PR's current head and the
+events observed on it.
+
+```json
+{"pr": "https://github.com/o/r/pull/1", "head": "abc123",
+ "events": [{"kind": "ci_failure", "key": "ci:abc123:build", "slot": "ci", "head": "abc123",
+             "data": {"check": "build"}}]}
+```
+
+No real event source is wired up yet; events come only from `ingest`.
+
+### Install
+
+Add a SessionStart hook group to `~/.claude/settings.json`:
+
+```json
+"SessionStart": [{ "matcher": "startup|resume|clear|compact", "hooks": [{ "type": "command", "timeout": 5, "command": "/path/to/cc-loadout/tools/pr-watch register" }] }]
+```
+
+Delivery has been tested in auto-mode sessions, where the doorbell starts a turn
+in an idle session and the session runs `pr-watch inbox` on its own.
+
 ## Requirements
 
-- Python 3.10+ (claude-tmux-state: POSIX `sh` and tmux; claude-tmux-restore also runs on 3.9)
+- Python 3.10+ (claude-tmux-state: POSIX `sh` and tmux; claude-tmux-restore and pr-watch also run on 3.9)
 - claude-tmux-restore: tmux 3.x and a Claude Code with `claude agents --json`
 - No third-party dependencies
