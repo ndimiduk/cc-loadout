@@ -64,7 +64,7 @@ CREATE TABLE deliveries (
 );
 """
 
-WAKE_KINDS = {"changes_requested", "review_comment", "ci_failure", "conflict"}
+WAKE_KINDS = {"changes_requested", "review_comment", "issue_comment", "ci_failure", "conflict"}
 TERMINAL_KINDS = {"merged", "closed"}
 SOCKET_TIMEOUT = 2.0
 PR_URL = re.compile(r"https?://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/(\d+)(?:[/?#]\S*)?")
