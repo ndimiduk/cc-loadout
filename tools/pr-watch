@@ -15,6 +15,7 @@ import contextlib
 import datetime
 import json
 import os
+import re
 import shlex
 import socket
 import sqlite3
@@ -66,6 +67,7 @@ CREATE TABLE deliveries (
 WAKE_KINDS = {"changes_requested", "review_comment", "ci_failure", "conflict"}
 TERMINAL_KINDS = {"merged", "closed"}
 SOCKET_TIMEOUT = 2.0
+PR_URL = re.compile(r"https?://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/(\d+)(?:[/?#]\S*)?")
 
 # Undelivered events on a session's subscribed PRs that are still current. An
 # event is superseded when it is about a head the PR has moved past, or when a
@@ -152,6 +154,22 @@ def current_session(opts) -> str:
     return session
 
 
+def canonical_pr(url) -> str:
+    """One spelling per PR, so a subscription and a source's URL always match."""
+    m = PR_URL.fullmatch(url.strip()) if isinstance(url, str) else None
+    if not m:
+        raise ValueError(f"not a pull request URL: {url!r}")
+    host, owner, repo, number = m.groups()
+    return f"https://{host.lower()}/{owner.lower()}/{repo.lower()}/pull/{number}"
+
+
+def pr_args(urls: list[str]) -> list[str]:
+    try:
+        return [canonical_pr(u) for u in urls]
+    except ValueError as e:
+        raise SystemExit(str(e))
+
+
 def pending(conn: sqlite3.Connection, session: str) -> list[sqlite3.Row]:
     return conn.execute(PENDING, {"session": session}).fetchall()
 
@@ -219,6 +237,11 @@ def cmd_register(opts) -> int:
             return 0
         conn = connect()
         with transaction(conn):
+            # /clear gives the same process a new session id: the old id must
+            # stop ringing a socket that now belongs to another conversation.
+            conn.execute(
+                "UPDATE sessions SET socket = NULL WHERE socket = ? AND session_id <> ?", (sock, session)
+            )
             # A new socket means a new process, which has not heard any ring.
             conn.execute(
                 """INSERT INTO sessions (session_id, socket, rung_seq, last_seen) VALUES (?, ?, 0, ?)
@@ -237,7 +260,7 @@ def cmd_add(opts) -> int:
     conn = connect()
     with transaction(conn):
         top = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()[0]
-        for url in opts.pr:
+        for url in pr_args(opts.pr):
             conn.execute(
                 "INSERT OR IGNORE INTO subscriptions (session_id, pr_url, from_seq, added_at) VALUES (?, ?, ?, ?)",
                 (session, url, top, time.time()),
@@ -249,7 +272,7 @@ def cmd_rm(opts) -> int:
     session = current_session(opts)
     conn = connect()
     with transaction(conn):
-        for url in opts.pr:
+        for url in pr_args(opts.pr):
             conn.execute("DELETE FROM subscriptions WHERE session_id = ? AND pr_url = ?", (session, url))
     return 0
 
@@ -269,46 +292,69 @@ def cmd_list(opts) -> int:
     return 0
 
 
+def parse_observation(line: str) -> tuple[str, str | None, list[dict]]:
+    obs = json.loads(line)
+    if not isinstance(obs, dict):
+        raise ValueError("not a JSON object")
+    head = obs.get("head")
+    events = obs.get("events", [])
+    if head is not None and not isinstance(head, str):
+        raise ValueError("head must be a string")
+    if not isinstance(events, list):
+        raise ValueError("events must be a list")
+    for e in events:
+        if not isinstance(e, dict):
+            raise ValueError("each event must be an object")
+        for field in ("kind", "key"):
+            if not isinstance(e.get(field), str) or not e[field]:
+                raise ValueError(f"event {field} must be a non-empty string")
+        for field in ("slot", "head"):
+            if e.get(field) is not None and not isinstance(e[field], str):
+                raise ValueError(f"event {field} must be a string")
+    return canonical_pr(obs.get("pr")), head, events
+
+
 def cmd_ingest(opts) -> int:
     """Record source observations, one JSON object per line, then ring.
 
     {"pr": URL, "head": SHA, "events": [{"kind", "key", "slot"?, "head"?, "data"?}]}
 
     `key` identifies the event within its PR, so re-observing it is a no-op.
+    Every line about a PR not seen before this run is its baseline.
     """
     conn = connect()
+    known = {row[0] for row in conn.execute("SELECT pr_url FROM prs")}
     added = 0
-    for lineno, line in enumerate(sys.stdin, 1):
-        if not line.strip():
-            continue
-        try:
-            obs = json.loads(line)
-            url = obs["pr"]
-            events = obs.get("events", [])
-            for e in events:
-                e["kind"], e["key"]
-        except (ValueError, KeyError, TypeError) as e:
-            print(f"line {lineno}: skipped, {e!r}", file=sys.stderr)
-            continue
-        now = time.time()
-        with transaction(conn):
-            first = conn.execute("SELECT 1 FROM prs WHERE pr_url = ?", (url,)).fetchone() is None
-            conn.execute(
-                """INSERT INTO prs (pr_url, head, observed_at) VALUES (?, ?, ?)
-                   ON CONFLICT (pr_url) DO UPDATE SET
-                     head = COALESCE(excluded.head, head), observed_at = excluded.observed_at""",
-                (url, obs.get("head"), now),
-            )
-            for e in events:
-                cur = conn.execute(
-                    """INSERT OR IGNORE INTO events
-                       (pr_url, kind, natural_key, slot, head, data, baseline, observed_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (url, e["kind"], str(e["key"]), e.get("slot"), e.get("head"),
-                     json.dumps(e.get("data", {})), int(first), now),
+    try:
+        for lineno, line in enumerate(sys.stdin, 1):
+            if not line.strip():
+                continue
+            try:
+                url, head, events = parse_observation(line)
+            except ValueError as e:
+                print(f"line {lineno}: skipped, {e}", file=sys.stderr)
+                continue
+            now = time.time()
+            with transaction(conn):
+                conn.execute(
+                    """INSERT INTO prs (pr_url, head, observed_at) VALUES (?, ?, ?)
+                       ON CONFLICT (pr_url) DO UPDATE SET
+                         head = COALESCE(excluded.head, head), observed_at = excluded.observed_at""",
+                    (url, head, now),
                 )
-                added += cur.rowcount
-    rung = ring(conn)
+                for e in events:
+                    cur = conn.execute(
+                        """INSERT INTO events
+                           (pr_url, kind, natural_key, slot, head, data, baseline, observed_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                           ON CONFLICT (pr_url, natural_key) DO NOTHING""",
+                        (url, e["kind"], e["key"], e.get("slot"), e.get("head"),
+                         json.dumps(e.get("data", {})), int(url not in known), now),
+                    )
+                    added += cur.rowcount
+    finally:
+        # Whatever was recorded before a failure still rings.
+        rung = ring(conn)
     print(f"{added} new events, rang {len(rung)} sessions")
     return 0
 

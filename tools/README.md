@@ -212,12 +212,14 @@ Events are edge-detected and level-delivered:
 
 - An event is recorded once per natural key (`key`, unique within its PR), so a
   source can report the same review or check result on every poll.
-- Events seen on a PR's first observation, or before a session subscribed, are
-  history and are never delivered.
+- Events in the first `ingest` run that reports a PR, or recorded before a
+  session subscribed, are history and are never delivered.
 - `inbox` shows only events that are still current. An event about a head the PR
-  has moved past is superseded, and so is one whose `slot` (say `ci`, or
-  `review:<login>`) has a newer event on the current head. A CI failure on an
-  old head reported after a success on the new head does not wake anyone.
+  has moved past is superseded. A `slot` names one thing whose successive results
+  replace each other, such as one check (`ci:build`) or one reviewer's verdict
+  (`review:<login>`); an event is superseded by a newer one in its slot on the
+  current head. A CI failure on an old head reported after a success on the new
+  head does not wake anyone.
 - Reading a merge or close unsubscribes the session from that PR.
 
 Only `changes_requested`, `review_comment`, `ci_failure` and `conflict` ring the
@@ -234,11 +236,13 @@ pr-watch rm https://github.com/o/r/pull/1
 ```
 
 `ingest` reads one JSON object per line on stdin: a PR's current head and the
-events observed on it.
+events observed on it. A line with a malformed field is skipped and reported.
+PR URLs are compared in one canonical form (lower case, no trailing path), in
+`add` and `rm` as well as `ingest`.
 
 ```json
 {"pr": "https://github.com/o/r/pull/1", "head": "abc123",
- "events": [{"kind": "ci_failure", "key": "ci:abc123:build", "slot": "ci", "head": "abc123",
+ "events": [{"kind": "ci_failure", "key": "ci:abc123:build", "slot": "ci:build", "head": "abc123",
              "data": {"check": "build"}}]}
 ```
 
