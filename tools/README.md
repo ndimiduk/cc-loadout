@@ -235,8 +235,8 @@ pr-watch inbox [--peek]
 pr-watch rm https://github.com/o/r/pull/1
 ```
 
-`ingest` reads one JSON object per line on stdin: a PR's current head and the
-events observed on it. A line that isn't valid UTF-8 JSON of this shape is
+`ingest` reads one JSON object per line on stdin (the example below is wrapped
+for reading): a PR's current head and the events observed on it. A line that isn't valid UTF-8 JSON of this shape is
 skipped and reported.
 PR URLs are compared in one canonical form (lower case, no trailing path), in
 `add` and `rm` as well as `ingest`.
@@ -250,9 +250,9 @@ PR URLs are compared in one canonical form (lower case, no trailing path), in
 A `key` already recorded is ignored, so it must change whenever the reported
 result does. A check run's id alone is not enough: a run reports several states
 over its life, and a re-requested run can be updated in place. The example keys
-on the run's id and its completion time. Within a slot the event recorded last
-wins, and within one line that is the later entry in `events`, so list a slot's
-results oldest first. `slot` and `head` are optional; an empty string for either
+on the run's id and its completion time. Among a slot's events on the current
+head, the one recorded last wins, and within one line that is the later entry
+in `events`, so list a slot's results oldest first. `slot` and `head` are optional; an empty string for either
 is rejected.
 
 No real event source is wired up yet; events come only from `ingest`.
