@@ -236,15 +236,20 @@ pr-watch rm https://github.com/o/r/pull/1
 ```
 
 `ingest` reads one JSON object per line on stdin: a PR's current head and the
-events observed on it. A line with a malformed field is skipped and reported.
+events observed on it. A line that isn't valid UTF-8 JSON of this shape is
+skipped and reported.
 PR URLs are compared in one canonical form (lower case, no trailing path), in
 `add` and `rm` as well as `ingest`.
 
 ```json
 {"pr": "https://github.com/o/r/pull/1", "head": "abc123",
- "events": [{"kind": "ci_failure", "key": "ci:abc123:build", "slot": "ci:build", "head": "abc123",
+ "events": [{"kind": "ci_failure", "key": "ci:abc123:build:8812", "slot": "ci:build", "head": "abc123",
              "data": {"check": "build"}}]}
 ```
+
+Each result needs its own `key` (here the check run's id), so a re-run on the
+same head is a new event that replaces the last one in its slot. `slot` and
+`head` are optional; an empty string for either is rejected.
 
 No real event source is wired up yet; events come only from `ingest`.
 

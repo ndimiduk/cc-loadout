@@ -72,8 +72,8 @@ PR_URL = re.compile(r"https?://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/(\d+)(?:[/?#]\
 # Undelivered events on a session's subscribed PRs that are still current. An
 # event is superseded when it is about a head the PR has moved past, or when a
 # newer event about the current head fills the same slot (a CI result replaced
-# by a re-run, a reviewer's earlier verdict). Events seen on a PR's first
-# observation, or before the session subscribed, are history, not news.
+# by a re-run, a reviewer's earlier verdict). Events in the ingest run that
+# first reports a PR, or recorded before the session subscribed, are history.
 PENDING = """
 SELECT e.seq, e.pr_url, e.kind, e.data,
        (e.head IS NULL OR p.head IS NULL OR e.head = p.head)
@@ -296,22 +296,27 @@ def parse_observation(line: str) -> tuple[str, str | None, list[dict]]:
     obs = json.loads(line)
     if not isinstance(obs, dict):
         raise ValueError("not a JSON object")
-    head = obs.get("head")
+    head = text_field(obs.get("head"), "head", required=False)
     events = obs.get("events", [])
-    if head is not None and not isinstance(head, str):
-        raise ValueError("head must be a string")
     if not isinstance(events, list):
         raise ValueError("events must be a list")
     for e in events:
         if not isinstance(e, dict):
             raise ValueError("each event must be an object")
-        for field in ("kind", "key"):
-            if not isinstance(e.get(field), str) or not e[field]:
-                raise ValueError(f"event {field} must be a non-empty string")
-        for field in ("slot", "head"):
-            if e.get(field) is not None and not isinstance(e[field], str):
-                raise ValueError(f"event {field} must be a string")
-    return canonical_pr(obs.get("pr")), head, events
+        for field in ("kind", "key", "slot", "head"):
+            text_field(e.get(field), f"event {field}", required=field in ("kind", "key"))
+    return text_field(canonical_pr(obs.get("pr")), "pr", required=True), head, events
+
+
+def text_field(value, what: str, required: bool) -> str | None:
+    if value is None and not required:
+        return None
+    # Empty would read as a real head or slot, where only null means "none".
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{what} must be a non-empty string")
+    # A lone surrogate from a JSON escape passes as str but can't be stored.
+    value.encode("utf-8")
+    return value
 
 
 def cmd_ingest(opts) -> int:
@@ -323,19 +328,25 @@ def cmd_ingest(opts) -> int:
     Every line about a PR not seen before this run is its baseline.
     """
     conn = connect()
-    known = {row[0] for row in conn.execute("SELECT pr_url FROM prs")}
+    introduced = set()
     added = 0
     try:
-        for lineno, line in enumerate(sys.stdin, 1):
-            if not line.strip():
+        # Bytes, decoded per line, so one bad line can't end the run whatever
+        # the locale's stdin decoding.
+        for lineno, raw in enumerate(sys.stdin.buffer, 1):
+            if not raw.strip():
                 continue
             try:
-                url, head, events = parse_observation(line)
-            except ValueError as e:
+                url, head, events = parse_observation(raw.decode("utf-8"))
+            except (ValueError, RecursionError) as e:
                 print(f"line {lineno}: skipped, {e}", file=sys.stderr)
                 continue
             now = time.time()
             with transaction(conn):
+                # Decided inside the transaction: a PR another ingest run
+                # introduced meanwhile is not this run's baseline.
+                if conn.execute("SELECT 1 FROM prs WHERE pr_url = ?", (url,)).fetchone() is None:
+                    introduced.add(url)
                 conn.execute(
                     """INSERT INTO prs (pr_url, head, observed_at) VALUES (?, ?, ?)
                        ON CONFLICT (pr_url) DO UPDATE SET
@@ -349,7 +360,7 @@ def cmd_ingest(opts) -> int:
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                            ON CONFLICT (pr_url, natural_key) DO NOTHING""",
                         (url, e["kind"], e["key"], e.get("slot"), e.get("head"),
-                         json.dumps(e.get("data", {})), int(url not in known), now),
+                         json.dumps(e.get("data", {})), int(url in introduced), now),
                     )
                     added += cur.rowcount
     finally:
